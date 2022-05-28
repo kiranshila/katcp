@@ -427,7 +427,11 @@ impl Display for Message {
             Some(id) => format!("[{}]", id),
             None => "".to_owned(),
         };
-        let args_str = "";
+        let mut args_str = "".to_owned();
+        self.arguments.iter().for_each(|argument| {
+            args_str.push(' ');
+            args_str.push_str(argument);
+        });
         writeln!(f, "{}{}{}{}", type_char, self.name, id_str, args_str)
     }
 }
@@ -439,7 +443,24 @@ mod serialization_tests {
     #[test]
     fn serialization() {
         let msg = Message::new(MessageType::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
-        let msg_str = "#foo-bar[123] foo bar";
+        let msg_str = "#foo-bar[123] foo bar\n";
         assert_eq!(msg_str, msg.to_string());
+    }
+}
+
+#[cfg(test)]
+mod there_and_back_tests {
+    use super::*;
+
+    #[test]
+    fn struct_and_back() {
+        let msg = Message::new(MessageType::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        assert_eq!(Message::from_str(&msg.to_string()).unwrap(), msg);
+    }
+
+    #[test]
+    fn string_and_back() {
+        let msg_str = "#foo-bar[123] foo bar\n";
+        assert_eq!(Message::from_str(msg_str).unwrap().to_string(), msg_str);
     }
 }
