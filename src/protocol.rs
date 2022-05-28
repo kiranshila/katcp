@@ -391,16 +391,13 @@ impl FromStr for Message {
     }
 }
 
-// impl<T> TryFrom<T> for Message
-// where
-//     T: Borrow<str>,
-// {
-//     type Error = Error<String>;
+impl TryFrom<&str> for Message {
+    type Error = Error<String>;
 
-//     fn try_from(value: T) -> Result<Self, Self::Error> {
-//         value.borrow().from_str()
-//     }
-// }
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        Self::from_str(s)
+    }
+}
 
 #[cfg(test)]
 mod deserialization_tests {
@@ -410,8 +407,11 @@ mod deserialization_tests {
     fn deserialization() {
         let msg = Message::new(MessageType::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
         let msg_str = "#foo-bar[123] foo bar";
+        // FromStr
         assert_eq!(msg, Message::from_str(msg_str).unwrap());
         assert_eq!(msg, msg_str.parse().unwrap());
+        // TryInto
+        assert_eq!(msg, msg_str.try_into().unwrap());
     }
 }
 
