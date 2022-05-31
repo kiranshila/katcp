@@ -53,11 +53,12 @@
 //! there is the [`protocol::Message::new_unchecked`], which is marked `unsafe`.
 //!
 //! ```
-//! use katcp::protocol::{Message,MessageType};
+//! use katcp::protocol::{Message,MessageMethod};
 //!
-//! let msg = Message::new(MessageType::Inform,"foo-bar",None,&["param-1","param-2"]).unwrap(); // Panic on bad arguments
-//! let msg_str = writeln!("{}",msg);
+//! let msg = Message::new(MessageMethod::Inform,"foo-bar",None,&["param-1","param-2"]).unwrap(); // Panic on bad arguments
+//! let msg_str = format!("{}",msg);
 //! ```
 
 pub mod messages;
 pub mod protocol;
+pub mod utils;

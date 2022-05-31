@@ -1,12 +1,24 @@
-#[derive(Debug)]
-/// The return codes for a `MessageType::Reply`
-pub enum RetCode {
-    /// Request successfully processed. Further arguments are request-specific.
-    Ok,
-    /// Request malformed. Second argument is a human-reaedable description of the error
-    Invalid,
-    /// Valid request that could not be processed. Second argument is a human-readable description of the error.
-    Fail,
+use crate::protocol::{KatcpError, Message, MessageMethod};
+use std::time::Instant;
+
+pub trait KatcpMessage: TryFrom<Message> + TryInto<Message> {
+    fn name(&self) -> &str;
+    fn method(&self) -> MessageMethod;
+    fn id(&self) -> Option<u32>;
+}
+
+impl KatcpMessage for Message {
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    fn method(&self) -> MessageMethod {
+        self.method
+    }
+
+    fn id(&self) -> Option<u32> {
+        self.id
+    }
 }
 
 #[derive(Debug)]
@@ -67,55 +79,70 @@ pub enum LogLevel {
     All,
 }
 
-/// The valid katcp "sensor" statuses
-pub enum SensorStatus {
-    /// The sensor is in the process of being initialized and no value has yet been
-    /// seen. Sensors should not remain in this state indefinitely.
-    Unknown,
-    /// The sensor reading is within the expected range of nominal operating values.
-    Nominal,
-    /// The sensor reading is outside the nominal operating range.
-    Warn,
-    /// The sensor reading indicates a critical condition for the device.
-    Error,
-    /// Taking a sensor reading failed and seems unlikely to succeed in future
-    /// without maintenance.
-    Failure,
-    /// The sensor could not be reached. This should only be used by a server that
-    /// is proxying the sensor for another KATCP device. A sensor that is read by
-    /// the server from a source other than another KATCP device should not be set
-    /// to this status.
-    Unreachable,
-    /// The sensor is inactive; while the sensor does not provide a valid value, this
-    /// status does not represent a failure condition. It could indicate that optional
-    /// sensing hardware is not connected; in multi-mode devices it may indicate
-    /// that a particular sensor is not applicable to the current mode of operation.
-    Inactive,
+pub struct Log {
+    id: Option<u32>,
+    level: LogLevel,
+    timestamp: Instant,
+    name: String,
+    message: String,
 }
 
-impl SensorStatus {
-    /// Returns if a given `SensorStatus` is valid
-    pub fn is_valid(self) -> bool {
-        if let SensorStatus::Nominal | SensorStatus::Warn | SensorStatus::Error = self {
-            true
-        } else {
-            false
-        }
+impl TryFrom<Message> for Log {
+    type Error = KatcpError;
+
+    fn try_from(message: Message) -> Result<Self, Self::Error> {
+        todo!()
+        // let level = match (message.arguments.get(1)?) {
+        //     "off" => LogLevel::Off,
+        //     "fatal" => LogLevel::Fatal,
+        //     "error" => LogLevel::Error,
+        //     "warn" => LogLevel::Warn,
+        //     "info" => LogLevel::Info,
+        //     "debug" => LogLevel::Debug,
+        //     "trace" => LogLevel::Trace,
+        //     "all" => LogLevel::All,
+        //     _ => return Err(KatcpError::DeserializationError),
+        // };
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+impl TryInto<Message> for Log {
+    type Error = KatcpError;
 
-    #[test]
-    fn status_validity() {
-        assert!(!SensorStatus::Unknown.is_valid());
-        assert!(SensorStatus::Nominal.is_valid());
-        assert!(SensorStatus::Warn.is_valid());
-        assert!(SensorStatus::Error.is_valid());
-        assert!(!SensorStatus::Failure.is_valid());
-        assert!(!SensorStatus::Unreachable.is_valid());
-        assert!(!SensorStatus::Inactive.is_valid());
+    fn try_into(self) -> Result<Message, Self::Error> {
+        let level = match self.level {
+            LogLevel::Off => "off",
+            LogLevel::Fatal => "fatal",
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+            LogLevel::All => "all",
+        };
+        let time = (self.timestamp.elapsed().as_millis() as u32).to_string();
+        // Safety: A constructed message is going to be valid
+        Ok(unsafe {
+            Message::new_unchecked(
+                MessageMethod::Inform,
+                "log",
+                self.id,
+                &[level, &time, &self.name, &self.message],
+            )
+        })
+    }
+}
+
+impl KatcpMessage for Log {
+    fn name(&self) -> &str {
+        "log"
+    }
+
+    fn method(&self) -> MessageMethod {
+        MessageMethod::Inform
+    }
+
+    fn id(&self) -> Option<u32> {
+        self.id
     }
 }
