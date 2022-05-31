@@ -11,9 +11,9 @@ use nom::{
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
-/// The method of a katcp message. The docs call this the type, but we want to scoot
+/// The kind of katcp message. The docs call this the type, but we want to scoot
 /// around the fact that `type` is a reserved keyword.
-pub enum MessageMethod {
+pub enum MessageKind {
     /// Request (?) messages will always be acknowledged by a reply
     Request,
     /// Reply (!) messages are sent in response to a `Request`
@@ -25,8 +25,8 @@ pub enum MessageMethod {
 #[derive(Debug, PartialEq, Eq)]
 /// The core raw message type of katcp
 pub struct Message {
-    /// The message type
-    pub(crate) method: MessageMethod,
+    /// The message kind
+    pub(crate) kind: MessageKind,
     /// The message name
     pub(crate) name: String,
     /// The optional, positive message id
@@ -41,8 +41,13 @@ pub struct Message {
 #[derive(Debug)]
 pub enum KatcpError {
     ParseError(nom::Err<Error<String>>),
-    DeserializationError,
+    BadArgument,
+    MissingArgument,
+    IncorrectType,
+    Unknown,
 }
+
+pub type MessageResult = Result<Message, KatcpError>;
 
 impl Message {
     /// A constructor for message that will create owned copies of the string-slice arguments
@@ -51,13 +56,13 @@ impl Message {
     /// such the serialized result may be wrong. It is up to the user to verify that the name
     /// and arguments match the spec
     pub unsafe fn new_unchecked<T: AsRef<str>, U: AsRef<str>>(
-        method: MessageMethod,
+        kind: MessageKind,
         name: T,
         id: Option<u32>,
         arguments: &[U],
     ) -> Self {
         Self {
-            method,
+            kind,
             name: name.as_ref().into(),
             id,
             arguments: arguments.iter().map(|s| s.as_ref().into()).collect(),
@@ -66,7 +71,7 @@ impl Message {
 
     /// A constructor for message that will create owned copies of the string-slice arguments
     pub fn new<T: AsRef<str>, U: AsRef<str>>(
-        method: MessageMethod,
+        kind: MessageKind,
         name: T,
         id: Option<u32>,
         arguments: &[U],
@@ -82,7 +87,7 @@ impl Message {
         }
         // Safety: this is after we've thrown parser results for validation of name
         // and arguments, so we're good to go here
-        unsafe { Ok(Self::new_unchecked(method, name, id, arguments)) }
+        unsafe { Ok(Self::new_unchecked(kind, name, id, arguments)) }
     }
 }
 
@@ -100,14 +105,14 @@ fn own_nom_err(e: nom::Err<Error<&str>>) -> nom::Err<Error<String>> {
     }
 }
 
-fn method(input: &str) -> IResult<&str, MessageMethod> {
+fn kind(input: &str) -> IResult<&str, MessageKind> {
     let (remaining, typ) = one_of("!#?")(input)?;
     Ok((
         remaining,
         match typ {
-            '?' => MessageMethod::Request,
-            '!' => MessageMethod::Reply,
-            '#' => MessageMethod::Inform,
+            '?' => MessageKind::Request,
+            '!' => MessageKind::Reply,
+            '#' => MessageKind::Inform,
             _ => unreachable!(),
         },
     ))
@@ -149,8 +154,8 @@ fn argument(input: &str) -> IResult<&str, &str> {
 }
 
 pub fn message(input: &str) -> IResult<&str, Message> {
-    let (remaining, (method, name, id, arguments, _, _)) = tuple((
-        method,
+    let (remaining, (kind, name, id, arguments, _, _)) = tuple((
+        kind,
         name,
         opt(id),
         many0(preceded(whitespace, argument)),
@@ -161,7 +166,7 @@ pub fn message(input: &str) -> IResult<&str, Message> {
     // Safety: this is after we've unwrapped the parser result, so any parser errors will have been
     // thrown already, so we can guarantee that this message will be valid
     Ok((remaining, unsafe {
-        Message::new_unchecked(method, name, id, &arguments)
+        Message::new_unchecked(kind, name, id, &arguments)
     }))
 }
 
@@ -171,9 +176,9 @@ mod parser_tests {
 
     #[test]
     fn test_msg_type() {
-        assert_eq!(Ok(("", MessageMethod::Reply)), method("!"));
-        assert_eq!(Ok(("", MessageMethod::Inform)), method("#"));
-        assert_eq!(Ok(("", MessageMethod::Request)), method("?"));
+        assert_eq!(Ok(("", MessageKind::Reply)), kind("!"));
+        assert_eq!(Ok(("", MessageKind::Inform)), kind("#"));
+        assert_eq!(Ok(("", MessageKind::Request)), kind("?"));
     }
 
     #[test]
@@ -235,20 +240,20 @@ mod parser_tests {
     #[test]
     fn test_message() {
         assert_eq!(
-            Message::new(MessageMethod::Request, "set-rate", None, &["5.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", None, &["5.1"]).unwrap(),
             message("?set-rate 5.1").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageMethod::Request, "set-rate", None, &["5.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", None, &["5.1"]).unwrap(),
             message("?set-rate 5.1\n").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageMethod::Reply, "set-rate", None, &["ok"]).unwrap(),
+            Message::new(MessageKind::Reply, "set-rate", None, &["ok"]).unwrap(),
             message("!set-rate ok").unwrap().1
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Request,
+                MessageKind::Request,
                 "set-unknown-parameter",
                 None,
                 &["6.1"]
@@ -258,7 +263,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Reply,
+                MessageKind::Reply,
                 "set-unknown-parameter",
                 None,
                 &["invalid", r"Unknown\_request."]
@@ -270,7 +275,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Reply,
+                MessageKind::Reply,
                 "set-rate",
                 None,
                 &["fail", r"Hardware\_did\_not\_respond."]
@@ -281,16 +286,16 @@ mod parser_tests {
                 .1
         );
         assert_eq!(
-            Message::new(MessageMethod::Request, "set-rate", Some(123), &["4.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", Some(123), &["4.1"]).unwrap(),
             message("?set-rate[123] 4.1").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageMethod::Reply, "set-rate", Some(123), &["ok"]).unwrap(),
+            Message::new(MessageKind::Reply, "set-rate", Some(123), &["ok"]).unwrap(),
             message("!set-rate[123] ok").unwrap().1
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Request,
+                MessageKind::Request,
                 "sensor-list",
                 None,
                 &Vec::<String>::new()
@@ -300,7 +305,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Request,
+                MessageKind::Request,
                 "sensor-list",
                 Some(420),
                 &Vec::<String>::new()
@@ -310,7 +315,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Inform,
+                MessageKind::Inform,
                 "sensor-list",
                 None,
                 &[
@@ -329,7 +334,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Inform,
+                MessageKind::Inform,
                 "sensor-list",
                 None,
                 &[
@@ -348,7 +353,7 @@ mod parser_tests {
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Inform,
+                MessageKind::Inform,
                 "sensor-list",
                 None,
                 &[
@@ -366,12 +371,12 @@ mod parser_tests {
                 .1
         );
         assert_eq!(
-            Message::new(MessageMethod::Reply, "sensor-list", None, &["ok", "3"]).unwrap(),
+            Message::new(MessageKind::Reply, "sensor-list", None, &["ok", "3"]).unwrap(),
             message(r"!sensor-list ok 3").unwrap().1
         );
         assert_eq!(
             Message::new(
-                MessageMethod::Inform,
+                MessageKind::Inform,
                 "internet-box",
                 None,
                 &["address", "[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:4000"]
@@ -412,8 +417,7 @@ mod deserialization_tests {
 
     #[test]
     fn deserialization() {
-        let msg =
-            Message::new(MessageMethod::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
         let msg_str = "#foo-bar[123] foo bar";
         // FromStr
         assert_eq!(msg, Message::from_str(msg_str).unwrap());
@@ -426,10 +430,10 @@ mod deserialization_tests {
 // Serialization
 impl Display for Message {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let type_char = match self.method {
-            MessageMethod::Request => '?',
-            MessageMethod::Reply => '!',
-            MessageMethod::Inform => '#',
+        let type_char = match self.kind {
+            MessageKind::Request => '?',
+            MessageKind::Reply => '!',
+            MessageKind::Inform => '#',
         };
         let id_str = match self.id {
             Some(id) => format!("[{}]", id),
@@ -450,8 +454,7 @@ mod serialization_tests {
 
     #[test]
     fn serialization() {
-        let msg =
-            Message::new(MessageMethod::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
         let msg_str = "#foo-bar[123] foo bar\n";
         assert_eq!(msg_str, msg.to_string());
     }
@@ -463,8 +466,7 @@ mod there_and_back_tests {
 
     #[test]
     fn struct_and_back() {
-        let msg =
-            Message::new(MessageMethod::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
         assert_eq!(Message::from_str(&msg.to_string()).unwrap(), msg);
     }
 
