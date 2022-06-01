@@ -38,7 +38,7 @@ pub struct Message {
     pub(crate) arguments: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum KatcpError {
     ParseError(nom::Err<Error<String>>),
     BadArgument,
@@ -59,7 +59,7 @@ impl Message {
         kind: MessageKind,
         name: T,
         id: Option<u32>,
-        arguments: &[U],
+        arguments: Vec<U>,
     ) -> Self {
         Self {
             kind,
@@ -74,13 +74,13 @@ impl Message {
         kind: MessageKind,
         name: T,
         id: Option<u32>,
-        arguments: &[U],
+        arguments: Vec<U>,
     ) -> Result<Self, KatcpError> {
         // Check name
         if let Err(e) = crate::protocol::name(name.as_ref()) {
             return Err(KatcpError::ParseError(own_nom_err(e)));
         }
-        for argument in arguments {
+        for argument in arguments.iter() {
             if let Err(e) = crate::protocol::argument(argument.as_ref()) {
                 return Err(KatcpError::ParseError(own_nom_err(e)));
             }
@@ -166,7 +166,7 @@ pub fn message(input: &str) -> IResult<&str, Message> {
     // Safety: this is after we've unwrapped the parser result, so any parser errors will have been
     // thrown already, so we can guarantee that this message will be valid
     Ok((remaining, unsafe {
-        Message::new_unchecked(kind, name, id, &arguments)
+        Message::new_unchecked(kind, name, id, arguments)
     }))
 }
 
@@ -240,15 +240,15 @@ mod parser_tests {
     #[test]
     fn test_message() {
         assert_eq!(
-            Message::new(MessageKind::Request, "set-rate", None, &["5.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", None, vec!["5.1"]).unwrap(),
             message("?set-rate 5.1").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageKind::Request, "set-rate", None, &["5.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", None, vec!["5.1"]).unwrap(),
             message("?set-rate 5.1\n").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageKind::Reply, "set-rate", None, &["ok"]).unwrap(),
+            Message::new(MessageKind::Reply, "set-rate", None, vec!["ok"]).unwrap(),
             message("!set-rate ok").unwrap().1
         );
         assert_eq!(
@@ -256,7 +256,7 @@ mod parser_tests {
                 MessageKind::Request,
                 "set-unknown-parameter",
                 None,
-                &["6.1"]
+                vec!["6.1"]
             )
             .unwrap(),
             message("?set-unknown-parameter 6.1").unwrap().1
@@ -266,7 +266,7 @@ mod parser_tests {
                 MessageKind::Reply,
                 "set-unknown-parameter",
                 None,
-                &["invalid", r"Unknown\_request."]
+                vec!["invalid", r"Unknown\_request."]
             )
             .unwrap(),
             message(r"!set-unknown-parameter invalid Unknown\_request.")
@@ -278,7 +278,7 @@ mod parser_tests {
                 MessageKind::Reply,
                 "set-rate",
                 None,
-                &["fail", r"Hardware\_did\_not\_respond."]
+                vec!["fail", r"Hardware\_did\_not\_respond."]
             )
             .unwrap(),
             message(r"!set-rate fail Hardware\_did\_not\_respond.")
@@ -286,11 +286,11 @@ mod parser_tests {
                 .1
         );
         assert_eq!(
-            Message::new(MessageKind::Request, "set-rate", Some(123), &["4.1"]).unwrap(),
+            Message::new(MessageKind::Request, "set-rate", Some(123), vec!["4.1"]).unwrap(),
             message("?set-rate[123] 4.1").unwrap().1
         );
         assert_eq!(
-            Message::new(MessageKind::Reply, "set-rate", Some(123), &["ok"]).unwrap(),
+            Message::new(MessageKind::Reply, "set-rate", Some(123), vec!["ok"]).unwrap(),
             message("!set-rate[123] ok").unwrap().1
         );
         assert_eq!(
@@ -298,7 +298,7 @@ mod parser_tests {
                 MessageKind::Request,
                 "sensor-list",
                 None,
-                &Vec::<String>::new()
+                Vec::<String>::new()
             )
             .unwrap(),
             message("?sensor-list").unwrap().1
@@ -308,7 +308,7 @@ mod parser_tests {
                 MessageKind::Request,
                 "sensor-list",
                 Some(420),
-                &Vec::<String>::new()
+                Vec::<String>::new()
             )
             .unwrap(),
             message("?sensor-list[420]").unwrap().1
@@ -318,7 +318,7 @@ mod parser_tests {
                 MessageKind::Inform,
                 "sensor-list",
                 None,
-                &[
+                vec![
                     "drive.enable-azim",
                     r"Azimuth\_drive\_enable\_signal\_status",
                     r"\@",
@@ -337,7 +337,7 @@ mod parser_tests {
                 MessageKind::Inform,
                 "sensor-list",
                 None,
-                &[
+                vec![
                     "drive.enable-elev",
                     r"Elevation\_drive\_enable\_signal\_status",
                     r"\@",
@@ -356,7 +356,7 @@ mod parser_tests {
                 MessageKind::Inform,
                 "sensor-list",
                 None,
-                &[
+                vec![
                     "drive.dc-voltage-elev",
                     r"Drive\_bus\_voltage",
                     "V",
@@ -371,7 +371,7 @@ mod parser_tests {
                 .1
         );
         assert_eq!(
-            Message::new(MessageKind::Reply, "sensor-list", None, &["ok", "3"]).unwrap(),
+            Message::new(MessageKind::Reply, "sensor-list", None, vec!["ok", "3"]).unwrap(),
             message(r"!sensor-list ok 3").unwrap().1
         );
         assert_eq!(
@@ -379,7 +379,7 @@ mod parser_tests {
                 MessageKind::Inform,
                 "internet-box",
                 None,
-                &["address", "[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:4000"]
+                vec!["address", "[2001:0db8:85a3:0000:0000:8a2e:0370:7334]:4000"]
             )
             .unwrap(),
             message(r"#internet-box address [2001:0db8:85a3:0000:0000:8a2e:0370:7334]:4000 ")
@@ -417,7 +417,13 @@ mod deserialization_tests {
 
     #[test]
     fn deserialization() {
-        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(
+            MessageKind::Inform,
+            "foo-bar",
+            Some(123),
+            vec!["foo", "bar"],
+        )
+        .unwrap();
         let msg_str = "#foo-bar[123] foo bar";
         // FromStr
         assert_eq!(msg, Message::from_str(msg_str).unwrap());
@@ -454,7 +460,13 @@ mod serialization_tests {
 
     #[test]
     fn serialization() {
-        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(
+            MessageKind::Inform,
+            "foo-bar",
+            Some(123),
+            vec!["foo", "bar"],
+        )
+        .unwrap();
         let msg_str = "#foo-bar[123] foo bar\n";
         assert_eq!(msg_str, msg.to_string());
     }
@@ -466,7 +478,13 @@ mod there_and_back_tests {
 
     #[test]
     fn struct_and_back() {
-        let msg = Message::new(MessageKind::Inform, "foo-bar", Some(123), &["foo", "bar"]).unwrap();
+        let msg = Message::new(
+            MessageKind::Inform,
+            "foo-bar",
+            Some(123),
+            vec!["foo", "bar"],
+        )
+        .unwrap();
         assert_eq!(Message::from_str(&msg.to_string()).unwrap(), msg);
     }
 

@@ -1,9 +1,22 @@
+//! This module provides the core katcp message type [`Log`]
+//!
+//! # Examples
+//! ```rust
+//! use katcp::{messages::log::Log,protocol::Message};
+//! let log: Log = r"#log warn 10000 device.sub-system Something\_may\_be\_wrong"
+//!     .parse::<Message>()
+//!     .unwrap()
+//!     .try_into()
+//!     .unwrap();
+//! ```
+
 use crate::{
     messages::common::{KatcpMessage, RetCode},
     protocol::{KatcpError, Message, MessageKind, MessageResult},
     utils::{escape, unescape},
 };
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use chrono::{DateTime, TimeZone, Utc};
+use std::{fmt::Display, str::FromStr};
 
 #[derive(Debug, PartialEq, Eq)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
@@ -63,11 +76,46 @@ pub enum LogLevel {
     All,
 }
 
+impl FromStr for LogLevel {
+    type Err = KatcpError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let level = match s {
+            "off" => LogLevel::Off,
+            "fatal" => LogLevel::Fatal,
+            "error" => LogLevel::Error,
+            "warn" => LogLevel::Warn,
+            "info" => LogLevel::Info,
+            "debug" => LogLevel::Debug,
+            "trace" => LogLevel::Trace,
+            "all" => LogLevel::All,
+            _ => return Err(KatcpError::BadArgument),
+        };
+        Ok(level)
+    }
+}
+
+impl Display for LogLevel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let level = match self {
+            LogLevel::Off => "off",
+            LogLevel::Fatal => "fatal",
+            LogLevel::Error => "error",
+            LogLevel::Warn => "warn",
+            LogLevel::Info => "info",
+            LogLevel::Debug => "debug",
+            LogLevel::Trace => "trace",
+            LogLevel::All => "all",
+        };
+        write!(f, "{}", level)
+    }
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Log {
     Inform {
         level: LogLevel,
-        timestamp: SystemTime,
+        timestamp: DateTime<Utc>,
         name: String,
         message: String,
     },
@@ -84,7 +132,7 @@ impl Log {
     /// Constructs a new [`Log`] inform message
     pub fn inform<T: AsRef<str>, U: AsRef<str>>(
         level: LogLevel,
-        timestamp: SystemTime,
+        timestamp: DateTime<Utc>,
         name: T,
         message: U,
     ) -> Self {
@@ -118,40 +166,70 @@ impl TryFrom<Message> for Log {
 
         // Parse the right kind out of the arguments
         match message.kind {
-            MessageKind::Request => todo!(),
-            MessageKind::Reply => todo!(),
+            MessageKind::Request => request_from_message(message),
+            MessageKind::Reply => reply_from_message(message),
             MessageKind::Inform => inform_from_message(message),
         }
     }
 }
 
-// We require here that message is named log and that it's kind is Inform
-fn inform_from_message(message: Message) -> Result<Log, KatcpError> {
-    let level = match message
+type LogResult = Result<Log, KatcpError>;
+
+fn request_from_message(message: Message) -> LogResult {
+    message
+        .arguments
+        .get(0)
+        .map(|s| s.parse())
+        .transpose()
+        .map(Log::request)
+}
+
+fn reply_from_message(message: Message) -> LogResult {
+    let ret_code = message
         .arguments
         .get(0)
         .ok_or(KatcpError::MissingArgument)?
         .as_str()
-    {
-        "off" => LogLevel::Off,
-        "fatal" => LogLevel::Fatal,
-        "error" => LogLevel::Error,
-        "warn" => LogLevel::Warn,
-        "info" => LogLevel::Info,
-        "debug" => LogLevel::Debug,
-        "trace" => LogLevel::Trace,
-        "all" => LogLevel::All,
-        _ => return Err(KatcpError::BadArgument),
-    };
-    let time = UNIX_EPOCH
-        + Duration::from_secs_f32(
-            message
-                .arguments
-                .get(1)
-                .ok_or(KatcpError::MissingArgument)?
-                .parse()
-                .map_err(|_| KatcpError::BadArgument)?,
-        );
+        .parse()?;
+    let level = message
+        .arguments
+        .get(1)
+        .ok_or(KatcpError::MissingArgument)?
+        .as_str()
+        .parse()?;
+    Ok(Log::reply(ret_code, level))
+}
+
+fn str_to_timestamp(s: &str) -> Result<DateTime<Utc>, KatcpError> {
+    let dot_idx = s.find('.').unwrap_or_else(|| s.chars().count());
+    let (sec, _) = s.split_at(dot_idx);
+    Ok(Utc.timestamp(sec.parse().map_err(|_| KatcpError::BadArgument)?, 0_u32))
+}
+
+fn timestamp_to_str(t: &DateTime<Utc>) -> String {
+    let secs = t.timestamp() as f64;
+    let nano = t.timestamp_subsec_nanos();
+    let frac = (nano as f64) / 1e9;
+    format!("{}", secs + frac)
+}
+
+// We require here that message is named log and that it's kind is Inform
+fn inform_from_message(message: Message) -> LogResult {
+    let level = message
+        .arguments
+        .get(0)
+        .ok_or(KatcpError::MissingArgument)?
+        .as_str()
+        .parse()?;
+
+    let time = str_to_timestamp(
+        message
+            .arguments
+            .get(1)
+            .ok_or(KatcpError::MissingArgument)?
+            .as_str(),
+    )?;
+
     let name = unescape(
         message
             .arguments
@@ -168,21 +246,46 @@ fn inform_from_message(message: Message) -> Result<Log, KatcpError> {
 }
 
 impl KatcpMessage for Log {
-    fn into_message(self, kind: MessageKind, id: Option<u32>) -> MessageResult {
+    fn into_message(self, id: Option<u32>) -> MessageResult {
         let (kind, args) = match self {
-            log @ Log::Inform { .. } => message_from_inform(&log, id)?,
-            Log::Reply { ret_code, level } => todo!(),
-            Log::Request { level } => todo!(),
+            log @ Log::Inform { .. } => args_from_inform(&log)?,
+            log @ Log::Reply { .. } => args_from_reply(&log)?,
+            log @ Log::Request { .. } => args_from_request(&log)?,
         };
-        todo!()
+        // Safety: we're escaping the strings when we build the args,
+        // so we're guaranteed the things are ok
+        Ok(unsafe { Message::new_unchecked(kind, "log", id, args) })
+    }
+}
+
+// We require here that log is indeed the reply variant
+fn args_from_reply(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
+    if let Log::Reply { ret_code, level } = log {
+        let level = level.to_string();
+        let ret_code = ret_code.to_string();
+        Ok((MessageKind::Reply, vec![ret_code, level]))
+    } else {
+        Err(KatcpError::BadArgument)
+    }
+}
+
+// We require here that log is indeed the request variant
+fn args_from_request(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
+    if let Log::Request { level } = log {
+        Ok((
+            MessageKind::Request,
+            match level {
+                Some(s) => vec![s.to_string()],
+                None => Vec::new(),
+            },
+        ))
+    } else {
+        Err(KatcpError::BadArgument)
     }
 }
 
 // We require here that log is indeed the inform variant
-fn message_from_inform(
-    log: &Log,
-    id: Option<u32>,
-) -> Result<(MessageKind, [String; 4]), KatcpError> {
+fn args_from_inform(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
     if let Log::Inform {
         level,
         timestamp,
@@ -190,55 +293,141 @@ fn message_from_inform(
         message,
     } = log
     {
-        let level = match level {
-            LogLevel::Off => "off",
-            LogLevel::Fatal => "fatal",
-            LogLevel::Error => "error",
-            LogLevel::Warn => "warn",
-            LogLevel::Info => "info",
-            LogLevel::Debug => "debug",
-            LogLevel::Trace => "trace",
-            LogLevel::All => "all",
-        };
-        let time = timestamp
-            .duration_since(UNIX_EPOCH)
-            .map_err(|_| KatcpError::Unknown)?
-            .as_secs_f32()
-            .to_string();
+        let level = level.to_string();
+        let time = timestamp_to_str(timestamp);
         Ok((
             MessageKind::Inform,
-            [level.to_owned(), time, escape(&name), escape(&message)],
+            vec![level, time, escape(name), escape(message)],
         ))
     } else {
         Err(KatcpError::BadArgument)
     }
 }
 
-// #[cfg(test)]
-// mod log_tests {
-//     use super::*;
+#[cfg(test)]
+mod log_tests {
+    use super::*;
 
-//     #[test]
-//     fn test_log() {
-//         let now = SystemTime::now();
-//         println!(
-//             "{:#?}",
-//             now.duration_since(UNIX_EPOCH).unwrap().as_secs_f32(I)
-//         );
-//         let msg_str = format!(
-//             "#log warn {} device.foo.bar Something\\_was\\_kinda\\_wrong",
-//             now.duration_since(UNIX_EPOCH).unwrap().as_secs_f32()
-//         );
-//         println!("{}", msg_str);
-//         assert_eq!(
-//             Log::new(
-//                 None,
-//                 LogLevel::Warn,
-//                 now,
-//                 "device.foo.bar",
-//                 "Something was kinda wrong"
-//             ),
-//             msg_str.parse::<Message>().unwrap().try_into().unwrap()
-//         );
-//     }
-// }
+    #[test]
+    fn test_to_message() {
+        let time = Utc.timestamp(1234567, 1234567);
+        assert_eq!(
+            Message::new(MessageKind::Request, "log", None, vec!["fatal"]).unwrap(),
+            Log::request(Some(LogLevel::Fatal))
+                .into_message(None)
+                .unwrap()
+        );
+        assert_eq!(
+            Message::new(MessageKind::Reply, "log", None, vec!["ok", "trace"]).unwrap(),
+            Log::reply(RetCode::Ok, LogLevel::Trace)
+                .into_message(None)
+                .unwrap()
+        );
+        assert_eq!(
+            Message::new(
+                MessageKind::Inform,
+                "log",
+                None,
+                vec![
+                    "error",
+                    &timestamp_to_str(&time),
+                    "some.device.somewhere",
+                    r"You\_goofed\_up",
+                ],
+            )
+            .unwrap(),
+            Log::inform(
+                LogLevel::Error,
+                time,
+                "some.device.somewhere",
+                "You goofed up",
+            )
+            .into_message(None)
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_from_message() {
+        let time = Utc.timestamp(1234567, 0);
+        assert_eq!(
+            Log::request(Some(LogLevel::Fatal)),
+            Message::new(MessageKind::Request, "log", None, vec!["fatal"])
+                .unwrap()
+                .try_into()
+                .unwrap()
+        );
+        assert_eq!(
+            Log::reply(RetCode::Ok, LogLevel::Trace),
+            Message::new(MessageKind::Reply, "log", None, vec!["ok", "trace"])
+                .unwrap()
+                .try_into()
+                .unwrap()
+        );
+        assert_eq!(
+            Log::inform(
+                LogLevel::Error,
+                time,
+                "some.device.somewhere",
+                "You goofed up"
+            ),
+            Message::new(
+                MessageKind::Inform,
+                "log",
+                None,
+                vec![
+                    "error",
+                    &timestamp_to_str(&time),
+                    "some.device.somewhere",
+                    r"You\_goofed\_up"
+                ]
+            )
+            .unwrap()
+            .try_into()
+            .unwrap(),
+        );
+    }
+
+    #[test]
+    fn test_from_message_str() {
+        assert_eq!(
+            Log::inform(
+                LogLevel::Warn,
+                Utc.timestamp(100, 0),
+                "foo.bar.baz",
+                "Hey there kiddo"
+            )
+            .into_message(None)
+            .unwrap(),
+            r"#log warn 100 foo.bar.baz Hey\_there\_kiddo"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            Log::inform(
+                LogLevel::Warn,
+                Utc.timestamp(100, 0),
+                "foo.bar.baz",
+                "Hey there kiddo"
+            )
+            .into_message(Some(123))
+            .unwrap(),
+            r"#log[123] warn 100 foo.bar.baz Hey\_there\_kiddo"
+                .parse()
+                .unwrap()
+        );
+        assert_eq!(
+            Log::inform(
+                LogLevel::Error,
+                Utc.timestamp(420, 69),
+                "foo.bar.baz",
+                "Hey there kiddo"
+            )
+            .into_message(Some(123))
+            .unwrap(),
+            r"#log[123] error 420.000000069 foo.bar.baz Hey\_there\_kiddo"
+                .parse()
+                .unwrap()
+        );
+    }
+}

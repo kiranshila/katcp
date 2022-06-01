@@ -53,9 +53,9 @@
 //! there is the [`protocol::Message::new_unchecked`], which is marked `unsafe`.
 //!
 //! ```
-//! use katcp::protocol::{Message,MessageMethod};
+//! use katcp::protocol::{Message,MessageKind};
 //!
-//! let msg = Message::new(MessageMethod::Inform,"foo-bar",None,&["param-1","param-2"]).unwrap(); // Panic on bad arguments
+//! let msg = Message::new(MessageKind::Inform,"foo-bar",None,vec!["param-1","param-2"]).unwrap(); // Panic on bad arguments
 //! let msg_str = format!("{}",msg);
 //! ```
 

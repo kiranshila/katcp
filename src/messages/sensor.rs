@@ -1,14 +1,3 @@
-#[derive(Debug)]
-/// The return codes for a `MessageType::Reply`
-pub enum RetCode {
-    /// Request successfully processed. Further arguments are request-specific.
-    Ok,
-    /// Request malformed. Second argument is a human-reaedable description of the error
-    Invalid,
-    /// Valid request that could not be processed. Second argument is a human-readable description of the error.
-    Fail,
-}
-
 /// The valid katcp "sensor" statuses
 pub enum SensorStatus {
     /// The sensor is in the process of being initialized and no value has yet been
@@ -38,16 +27,15 @@ pub enum SensorStatus {
 impl SensorStatus {
     /// Returns if a given `SensorStatus` is valid
     pub fn is_valid(self) -> bool {
-        if let SensorStatus::Nominal | SensorStatus::Warn | SensorStatus::Error = self {
-            true
-        } else {
-            false
-        }
+        matches!(
+            self,
+            SensorStatus::Nominal | SensorStatus::Warn | SensorStatus::Error
+        )
     }
 }
 
 #[cfg(test)]
-mod tests {
+mod sensor_tests {
     use super::*;
 
     #[test]

@@ -1,10 +1,4 @@
 /// Unescapes a string revieved from katcp using the eight valid escape characters
-///
-/// # Example
-/// ```rust
-///     let s = unescape(r"This\_is\_a\_message\n");
-///     # Returns "This is a message\n"
-/// ```
 pub fn unescape(input: &str) -> String {
     input
         .replace(r"\_", " ")
@@ -18,12 +12,6 @@ pub fn unescape(input: &str) -> String {
 }
 
 /// Escapes a string into a string suitable for katcp using the eight valid escape characters
-///
-/// # Example
-/// ```rust
-/// let s = escape("This is a message\n");
-/// # Returns r"This\_is\_a\_message\n"
-/// ```
 pub fn escape(input: &str) -> String {
     if input.is_empty() {
         r"\@".to_owned()
