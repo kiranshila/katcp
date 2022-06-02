@@ -4,8 +4,6 @@
 //! ```rust
 //! use katcp::{messages::log::Log,protocol::Message};
 //! let log: Log = r"#log warn 10000 device.sub-system Something\_may\_be\_wrong"
-//!     .parse::<Message>()
-//!     .unwrap()
 //!     .try_into()
 //!     .unwrap();
 //! ```
@@ -429,5 +427,21 @@ mod log_tests {
                 .parse()
                 .unwrap()
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use katcp_derive::Katcp;
+
+    #[test]
+    fn test_name() {
+        #[derive(Katcp)]
+        enum Foo {
+            Inform { foo: String },
+            Reply { bar: u32 },
+            Request { baz: i8, quux: String, spam: f32 },
+        }
     }
 }
