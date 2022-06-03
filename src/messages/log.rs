@@ -7,16 +7,14 @@
 //!     .try_into()
 //!     .unwrap();
 //! ```
-
 use crate::{
-    messages::common::{KatcpMessage, RetCode},
+    messages::common::{FromKatcpArgument, KatcpMessage, RetCode, ToKatcpArgument},
     protocol::{KatcpError, Message, MessageKind, MessageResult},
-    utils::{escape, unescape},
 };
-use chrono::{DateTime, TimeZone, Utc};
-use std::{fmt::Display, str::FromStr};
+use chrono::{DateTime, Utc};
+use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
 pub enum LogLevel {
     /// # Definition
@@ -74,42 +72,7 @@ pub enum LogLevel {
     All,
 }
 
-impl FromStr for LogLevel {
-    type Err = KatcpError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let level = match s {
-            "off" => LogLevel::Off,
-            "fatal" => LogLevel::Fatal,
-            "error" => LogLevel::Error,
-            "warn" => LogLevel::Warn,
-            "info" => LogLevel::Info,
-            "debug" => LogLevel::Debug,
-            "trace" => LogLevel::Trace,
-            "all" => LogLevel::All,
-            _ => return Err(KatcpError::BadArgument),
-        };
-        Ok(level)
-    }
-}
-
-impl Display for LogLevel {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let level = match self {
-            LogLevel::Off => "off",
-            LogLevel::Fatal => "fatal",
-            LogLevel::Error => "error",
-            LogLevel::Warn => "warn",
-            LogLevel::Info => "info",
-            LogLevel::Debug => "debug",
-            LogLevel::Trace => "trace",
-            LogLevel::All => "all",
-        };
-        write!(f, "{}", level)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
 pub enum Log {
     Inform {
         level: LogLevel,
@@ -153,157 +116,10 @@ impl Log {
     }
 }
 
-impl TryFrom<Message> for Log {
-    type Error = KatcpError;
-
-    fn try_from(message: Message) -> Result<Self, Self::Error> {
-        // First we ensure that this message is actually log
-        if message.name != "log" {
-            return Err(KatcpError::IncorrectType);
-        }
-
-        // Parse the right kind out of the arguments
-        match message.kind {
-            MessageKind::Request => request_from_message(message),
-            MessageKind::Reply => reply_from_message(message),
-            MessageKind::Inform => inform_from_message(message),
-        }
-    }
-}
-
-type LogResult = Result<Log, KatcpError>;
-
-fn request_from_message(message: Message) -> LogResult {
-    message
-        .arguments
-        .get(0)
-        .map(|s| s.parse())
-        .transpose()
-        .map(Log::request)
-}
-
-fn reply_from_message(message: Message) -> LogResult {
-    let ret_code = message
-        .arguments
-        .get(0)
-        .ok_or(KatcpError::MissingArgument)?
-        .as_str()
-        .parse()?;
-    let level = message
-        .arguments
-        .get(1)
-        .ok_or(KatcpError::MissingArgument)?
-        .as_str()
-        .parse()?;
-    Ok(Log::reply(ret_code, level))
-}
-
-fn str_to_timestamp(s: &str) -> Result<DateTime<Utc>, KatcpError> {
-    let dot_idx = s.find('.').unwrap_or_else(|| s.chars().count());
-    let (sec, _) = s.split_at(dot_idx);
-    Ok(Utc.timestamp(sec.parse().map_err(|_| KatcpError::BadArgument)?, 0_u32))
-}
-
-fn timestamp_to_str(t: &DateTime<Utc>) -> String {
-    let secs = t.timestamp() as f64;
-    let nano = t.timestamp_subsec_nanos();
-    let frac = (nano as f64) / 1e9;
-    format!("{}", secs + frac)
-}
-
-// We require here that message is named log and that it's kind is Inform
-fn inform_from_message(message: Message) -> LogResult {
-    let level = message
-        .arguments
-        .get(0)
-        .ok_or(KatcpError::MissingArgument)?
-        .as_str()
-        .parse()?;
-
-    let time = str_to_timestamp(
-        message
-            .arguments
-            .get(1)
-            .ok_or(KatcpError::MissingArgument)?
-            .as_str(),
-    )?;
-
-    let name = unescape(
-        message
-            .arguments
-            .get(2)
-            .ok_or(KatcpError::MissingArgument)?,
-    );
-    let msg = unescape(
-        message
-            .arguments
-            .get(3)
-            .ok_or(KatcpError::MissingArgument)?,
-    );
-    Ok(Log::inform(level, time, name, msg))
-}
-
-impl KatcpMessage for Log {
-    fn into_message(self, id: Option<u32>) -> MessageResult {
-        let (kind, args) = match self {
-            log @ Log::Inform { .. } => args_from_inform(&log)?,
-            log @ Log::Reply { .. } => args_from_reply(&log)?,
-            log @ Log::Request { .. } => args_from_request(&log)?,
-        };
-        // Safety: we're escaping the strings when we build the args,
-        // so we're guaranteed the things are ok
-        Ok(unsafe { Message::new_unchecked(kind, "log", id, args) })
-    }
-}
-
-// We require here that log is indeed the reply variant
-fn args_from_reply(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
-    if let Log::Reply { ret_code, level } = log {
-        let level = level.to_string();
-        let ret_code = ret_code.to_string();
-        Ok((MessageKind::Reply, vec![ret_code, level]))
-    } else {
-        Err(KatcpError::BadArgument)
-    }
-}
-
-// We require here that log is indeed the request variant
-fn args_from_request(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
-    if let Log::Request { level } = log {
-        Ok((
-            MessageKind::Request,
-            match level {
-                Some(s) => vec![s.to_string()],
-                None => Vec::new(),
-            },
-        ))
-    } else {
-        Err(KatcpError::BadArgument)
-    }
-}
-
-// We require here that log is indeed the inform variant
-fn args_from_inform(log: &Log) -> Result<(MessageKind, Vec<String>), KatcpError> {
-    if let Log::Inform {
-        level,
-        timestamp,
-        name,
-        message,
-    } = log
-    {
-        let level = level.to_string();
-        let time = timestamp_to_str(timestamp);
-        Ok((
-            MessageKind::Inform,
-            vec![level, time, escape(name), escape(message)],
-        ))
-    } else {
-        Err(KatcpError::BadArgument)
-    }
-}
-
 #[cfg(test)]
 mod log_tests {
+    use chrono::TimeZone;
+
     use super::*;
 
     #[test]
@@ -328,7 +144,7 @@ mod log_tests {
                 None,
                 vec![
                     "error",
-                    &timestamp_to_str(&time),
+                    "1234567.001234567",
                     "some.device.somewhere",
                     r"You\_goofed\_up",
                 ],
@@ -375,7 +191,7 @@ mod log_tests {
                 None,
                 vec![
                     "error",
-                    &timestamp_to_str(&time),
+                    "1234567.0",
                     "some.device.somewhere",
                     r"You\_goofed\_up"
                 ]
@@ -427,21 +243,5 @@ mod log_tests {
                 .parse()
                 .unwrap()
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use katcp_derive::Katcp;
-
-    #[test]
-    fn test_name() {
-        #[derive(Katcp)]
-        enum Foo {
-            Inform { foo: String },
-            Reply { bar: u32 },
-            Request { baz: i8, quux: String, spam: f32 },
-        }
     }
 }

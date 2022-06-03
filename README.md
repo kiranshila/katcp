@@ -9,6 +9,7 @@ structures for the protocol following the most recent
 Our version number here will reflect the katcp revision in major and minor, with
 the patch field left for this library's patches.
 
-## no_std support
+## Todo!
 
-Todo!
+* no_std
+* KatcpDiscrete derive macro

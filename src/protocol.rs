@@ -7,7 +7,7 @@ use nom::{
     error::Error,
     multi::{many0, many1},
     sequence::{delimited, pair, preceded, tuple},
-    Finish, IResult,
+    IResult,
 };
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -390,21 +390,18 @@ mod parser_tests {
 }
 
 impl FromStr for Message {
-    type Err = Error<String>;
+    type Err = KatcpError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match message(s).finish() {
-            Ok((_, message)) => Ok(message),
-            Err(Error { input, code }) => Err(Error {
-                input: input.to_owned(),
-                code,
-            }),
+        match message(s) {
+            Ok((_, m)) => Ok(m),
+            Err(e) => Err(KatcpError::ParseError(own_nom_err(e))),
         }
     }
 }
 
 impl TryFrom<&str> for Message {
-    type Error = Error<String>;
+    type Error = KatcpError;
 
     fn try_from(s: &str) -> Result<Self, Self::Error> {
         Self::from_str(s)
