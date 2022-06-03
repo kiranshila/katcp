@@ -51,11 +51,12 @@ fn generate_serde(
     msg_result_type: &Ident,
     arg_result_type: &Ident,
     variant: &Variant,
-) -> proc_macro2::TokenStream {
+) -> (proc_macro2::TokenStream, Ident, Ident) {
     let kind = variant.ident.to_owned();
     let kind_str_lower = kind.to_string().to_lowercase();
-    let fn_to = format_ident!("args_from_{}", kind_str_lower);
-    let fn_from = format_ident!("{}_from_message", kind_str_lower);
+    let message_name_lower = message_name.to_string().to_lowercase();
+    let fn_to = format_ident!("{}_args_from_{}", message_name_lower, kind_str_lower);
+    let fn_from = format_ident!("{}_from_{}_message", kind_str_lower, message_name_lower);
     let fields = get_named_fields(variant);
     let types = get_field_types(variant);
     let arg_parses = zip(fields.clone(), types)
@@ -69,22 +70,26 @@ fn generate_serde(
                 )?;
             }
         });
-    quote! {
-        fn #fn_to(msg: &#message_name) -> #arg_result_type {
-            if let #message_name::#kind {
-                #(#fields),*
-             } = msg {
-                #(let #fields = #fields.to_argument();)* // Assume field impls ToKatcpArgument
-                Ok((MessageKind::#kind, vec![#(#fields),*]))
-            } else {
-                Err(KatcpError::BadArgument)
+    (
+        quote! {
+            fn #fn_to(msg: &#message_name) -> #arg_result_type {
+                if let #message_name::#kind {
+                    #(#fields),*
+                } = msg {
+                    #(let #fields = #fields.to_argument();)* // Assume field impls ToKatcpArgument
+                    Ok((MessageKind::#kind, vec![#(#fields),*]))
+                } else {
+                    Err(KatcpError::BadArgument)
+                }
             }
-        }
-        fn #fn_from(msg: Message) -> #msg_result_type {
-            #(#arg_parses)*
-            Ok(#message_name::#kind{ #(#fields),* })
-        }
-    }
+            fn #fn_from(msg: Message) -> #msg_result_type {
+                #(#arg_parses)*
+                Ok(#message_name::#kind{ #(#fields),* })
+            }
+        },
+        fn_to,
+        fn_from,
+    )
 }
 
 #[proc_macro_derive(KatcpMessage)]
@@ -107,11 +112,11 @@ pub fn derive_katcp(tokens: TokenStream) -> TokenStream {
     let message_str = message_name.to_string().to_lowercase();
 
     // Serialize into args fns
-    let args_from_request =
+    let (args_from_request, fn_to_request, fn_from_request) =
         generate_serde(&message_name, &msg_result_type, &args_result_type, &request);
-    let args_from_reply =
+    let (args_from_reply, fn_to_reply, fn_from_reply) =
         generate_serde(&message_name, &msg_result_type, &args_result_type, &reply);
-    let args_from_inform =
+    let (args_from_inform, fn_to_inform, fn_from_inform) =
         generate_serde(&message_name, &msg_result_type, &args_result_type, &inform);
 
     let generated = quote! {
@@ -124,18 +129,18 @@ pub fn derive_katcp(tokens: TokenStream) -> TokenStream {
                     return Err(KatcpError::IncorrectType);
                 }
                 match message.kind {
-                    MessageKind::Request => request_from_message(message),
-                    MessageKind::Reply => reply_from_message(message),
-                    MessageKind::Inform => inform_from_message(message),
+                    MessageKind::Request => #fn_from_request(message),
+                    MessageKind::Reply => #fn_from_reply(message),
+                    MessageKind::Inform => #fn_from_inform(message),
                 }
             }
         }
         impl KatcpMessage for #message_name {
             fn into_message(self, id: Option<u32>) -> MessageResult {
                 let (kind, args) = match self {
-                    v @ #message_name::Inform { .. } => args_from_inform(&v)?,
-                    v @ #message_name::Reply { .. } => args_from_reply(&v)?,
-                    v @ #message_name::Request { .. } => args_from_request(&v)?,
+                    v @ #message_name::Inform { .. } => #fn_to_inform(&v)?,
+                    v @ #message_name::Reply { .. } => #fn_to_reply(&v)?,
+                    v @ #message_name::Request { .. } => #fn_to_request(&v)?,
                 };
                 // Safety: all strings have been escaped and core types have been
                 // serialized according to the spec, so we shouldn't fail any parser

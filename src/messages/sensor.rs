@@ -1,4 +1,8 @@
+use crate::messages::common::*;
+use katcp_derive::KatcpDiscrete;
+
 /// The valid katcp "sensor" statuses
+#[derive(KatcpDiscrete)]
 pub enum SensorStatus {
     /// The sensor is in the process of being initialized and no value has yet been
     /// seen. Sensors should not remain in this state indefinitely.
