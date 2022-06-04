@@ -8,7 +8,7 @@
 This crate provides a rust implementation of the [KATCP](https://katcp-python.readthedocs.io/en/latest/_downloads/361189acb383a294be20d6c10c257cb4/NRF-KAT7-6.0-IFCE-002-Rev5-1.pdf)
 monitor and control protocol, as described by the Karoo Array Telescope (KAT) project from the Square Kilometer Array (SKA) South Africa group.
 
-# Description
+### Description
 
 From the official specification:
 
@@ -22,7 +22,7 @@ only provides the core `protocol::Message` type and the required message formats
 a client or server. This is to allow this library to be small and portable and not to have to make any assumptions about
 the eventual implementation.
 
-# License
+### License
 
 katcp is distributed under the terms of both the MIT license and the Apache License (Version 2.0).
 
