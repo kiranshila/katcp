@@ -60,5 +60,6 @@
 //! ```
 
 pub mod messages;
+pub mod prelude;
 pub mod protocol;
 pub mod utils;
