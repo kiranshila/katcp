@@ -1,11 +1,16 @@
 # katcp
 
+[![license](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue?style=flat-square)](#license)
+[![rustc](https://img.shields.io/badge/rustc-1.54+-blue?style=flat-square&logo=rust)](https://www.rust-lang.org)
+[![build status](https://img.shields.io/github/workflow/status/GReX-Telescope/katcp/CI/main?style=flat-square&logo=github)](https://github.com/GReX-Telescope/katcp/actions)
+
 This crate provides a rust implementation of the [KATCP](https://katcp-python.readthedocs.io/en/latest/_downloads/361189acb383a294be20d6c10c257cb4/NRF-KAT7-6.0-IFCE-002-Rev5-1.pdf)
 monitor and control protocol, as described by the Karoo Array Telescope (KAT) project from the Square Kilometer Array (SKA) South Africa group.
 
 ### Description
 
 From the official specification:
+
 > Broadly speaking, KATCP consists of newline-separated text messages sent asynchronously over a TCP/IP
 > stream. There are three categories of messages: requests, replies and informs. Request messages expect some
 > sort of acknowledgement. Reply messages acknowledge requests. Inform messages require no acknowledgement
@@ -36,7 +41,7 @@ let msg_b = Message::from_str(msg_str).unwrap();
 ```
 
 If you are working on a stream of messages, you can invoke the parser directly. The parser is written with the [nom](https://github.com/Geal/nom)
-parser combinator library, so the top level [`protocol::message`] can be used with that directly.
+parser combinator library, so the top level `protocol::message` can be used with that directly.
 
 ```rust
 use katcp::protocol::{message, Message};
@@ -49,10 +54,10 @@ fn parse_many_messages(input: &str) -> IResult<&str, Vec<Message>> {
 
 #### Serialization
 
-If you have a constructed [`protocol::Message`], you can call anything that uses `Display` to serialize.
-Note: the serialization function does *not* check validity, that is performed with the standard [`protocol::Message::new`]
-consstructor. The `Display` methods will assume a constructed message is valid. If you want to skip these validation steps
-there is the [`protocol::Message::new_unchecked`], which is marked `unsafe`.
+If you have a constructed `protocol::Message`, you can call anything that uses `Display` to serialize.
+Note: the serialization function does _not_ check validity, that is performed with the standard `protocol::Message::new`
+constructor. The `Display` methods will assume a constructed message is valid. If you want to skip these validation steps
+there is the `protocol::Message::new_unchecked`, which is marked `unsafe`.
 
 ```rust
 use katcp::protocol::{Message,MessageKind};

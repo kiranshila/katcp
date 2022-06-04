@@ -28,14 +28,11 @@ jobs:
 
   build:
     name: Build and test
-    runs-on: ${{ matrix.os }}
+    # We don't need to build on windows, do we?
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os:
-          - ubuntu-latest
-          - macos-latest
-          - windows-latest
-          # Add more here if we want to do MSRV
+        # Add more here if we want to do MSRV
         rust-version: [stable]
       fail-fast: false
     env:
