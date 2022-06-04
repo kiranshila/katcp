@@ -2,6 +2,9 @@
 name = "katcp"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.56.0"
+license = "Apache-2.0 OR MIT"
+repository = "https://github.com/GReX-Telescope/katcp"
 
 [dependencies]
 nom = "7"

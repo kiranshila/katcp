@@ -2,17 +2,17 @@
 //!
 //! # Examples
 //! ```rust
-//! use katcp::{messages::log::Log,protocol::Message};
-//! let log: Log = r"#log warn 10000 device.sub-system Something\_may\_be\_wrong"
-//!     .try_into()
-//!     .unwrap();
+//! use katcp::{messages::log::Log, protocol::Message};
+//! let log: Log =
+//!     r"#log warn 10000 device.sub-system Something\_may\_be\_wrong".try_into().unwrap();
 //! ```
+use chrono::{DateTime, Utc};
+use katcp_derive::{KatcpDiscrete, KatcpMessage};
+
 use crate::{
     messages::common::{FromKatcpArgument, KatcpMessage, RetCode, ToKatcpArgument},
     protocol::{KatcpError, Message, MessageKind, MessageResult},
 };
-use chrono::{DateTime, Utc};
-use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
 #[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
@@ -74,19 +74,9 @@ pub enum LogLevel {
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
 pub enum Log {
-    Inform {
-        level: LogLevel,
-        timestamp: DateTime<Utc>,
-        name: String,
-        message: String,
-    },
-    Reply {
-        ret_code: RetCode,
-        level: LogLevel,
-    },
-    Request {
-        level: Option<LogLevel>,
-    },
+    Inform { level: LogLevel, timestamp: DateTime<Utc>, name: String, message: String },
+    Reply { ret_code: RetCode, level: LogLevel },
+    Request { level: Option<LogLevel> },
 }
 
 impl Log {
@@ -127,37 +117,23 @@ mod log_tests {
         let time = Utc.timestamp(1234567, 1234567);
         assert_eq!(
             Message::new(MessageKind::Request, "log", None, vec!["fatal"]).unwrap(),
-            Log::request(Some(LogLevel::Fatal))
-                .into_message(None)
-                .unwrap()
+            Log::request(Some(LogLevel::Fatal)).into_message(None).unwrap()
         );
         assert_eq!(
             Message::new(MessageKind::Reply, "log", None, vec!["ok", "trace"]).unwrap(),
-            Log::reply(RetCode::Ok, LogLevel::Trace)
-                .into_message(None)
-                .unwrap()
+            Log::reply(RetCode::Ok, LogLevel::Trace).into_message(None).unwrap()
         );
         assert_eq!(
-            Message::new(
-                MessageKind::Inform,
-                "log",
-                None,
-                vec![
-                    "error",
-                    "1234567.001234567",
-                    "some.device.somewhere",
-                    r"You\_goofed\_up",
-                ],
-            )
-            .unwrap(),
-            Log::inform(
-                LogLevel::Error,
-                time,
+            Message::new(MessageKind::Inform, "log", None, vec![
+                "error",
+                "1234567.001234567",
                 "some.device.somewhere",
-                "You goofed up",
-            )
-            .into_message(None)
-            .unwrap()
+                r"You\_goofed\_up",
+            ],)
+            .unwrap(),
+            Log::inform(LogLevel::Error, time, "some.device.somewhere", "You goofed up",)
+                .into_message(None)
+                .unwrap()
         );
     }
 
@@ -179,23 +155,13 @@ mod log_tests {
                 .unwrap()
         );
         assert_eq!(
-            Log::inform(
-                LogLevel::Error,
-                time,
+            Log::inform(LogLevel::Error, time, "some.device.somewhere", "You goofed up"),
+            Message::new(MessageKind::Inform, "log", None, vec![
+                "error",
+                "1234567.0",
                 "some.device.somewhere",
-                "You goofed up"
-            ),
-            Message::new(
-                MessageKind::Inform,
-                "log",
-                None,
-                vec![
-                    "error",
-                    "1234567.0",
-                    "some.device.somewhere",
-                    r"You\_goofed\_up"
-                ]
-            )
+                r"You\_goofed\_up"
+            ])
             .unwrap()
             .try_into()
             .unwrap(),
@@ -205,43 +171,22 @@ mod log_tests {
     #[test]
     fn test_from_message_str() {
         assert_eq!(
-            Log::inform(
-                LogLevel::Warn,
-                Utc.timestamp(100, 0),
-                "foo.bar.baz",
-                "Hey there kiddo"
-            )
-            .into_message(None)
-            .unwrap(),
-            r"#log warn 100 foo.bar.baz Hey\_there\_kiddo"
-                .parse()
-                .unwrap()
+            Log::inform(LogLevel::Warn, Utc.timestamp(100, 0), "foo.bar.baz", "Hey there kiddo")
+                .into_message(None)
+                .unwrap(),
+            r"#log warn 100 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
         );
         assert_eq!(
-            Log::inform(
-                LogLevel::Warn,
-                Utc.timestamp(100, 0),
-                "foo.bar.baz",
-                "Hey there kiddo"
-            )
-            .into_message(Some(123))
-            .unwrap(),
-            r"#log[123] warn 100 foo.bar.baz Hey\_there\_kiddo"
-                .parse()
-                .unwrap()
+            Log::inform(LogLevel::Warn, Utc.timestamp(100, 0), "foo.bar.baz", "Hey there kiddo")
+                .into_message(Some(123))
+                .unwrap(),
+            r"#log[123] warn 100 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
         );
         assert_eq!(
-            Log::inform(
-                LogLevel::Error,
-                Utc.timestamp(420, 69),
-                "foo.bar.baz",
-                "Hey there kiddo"
-            )
-            .into_message(Some(123))
-            .unwrap(),
-            r"#log[123] error 420.000000069 foo.bar.baz Hey\_there\_kiddo"
-                .parse()
-                .unwrap()
+            Log::inform(LogLevel::Error, Utc.timestamp(420, 69), "foo.bar.baz", "Hey there kiddo")
+                .into_message(Some(123))
+                .unwrap(),
+            r"#log[123] error 420.000000069 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
         );
     }
 }

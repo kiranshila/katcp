@@ -1,9 +1,10 @@
+use chrono::{DateTime, TimeZone, Utc};
+use katcp_derive::KatcpDiscrete;
+
 use crate::{
     protocol::{KatcpError, Message, MessageResult},
     utils::{escape, unescape},
 };
-use chrono::{DateTime, TimeZone, Utc};
-use katcp_derive::KatcpDiscrete;
 
 /// The trait that specific katcp messages should implement
 pub trait KatcpMessage: TryFrom<Message> {
@@ -68,10 +69,7 @@ impl FromKatcpArgument for DateTime<Utc> {
     type Err = KatcpError;
 
     fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
-        let dot_idx = s
-            .as_ref()
-            .find('.')
-            .unwrap_or_else(|| s.as_ref().chars().count());
+        let dot_idx = s.as_ref().find('.').unwrap_or_else(|| s.as_ref().chars().count());
         let (sec, _) = s.as_ref().split_at(dot_idx); //TODO FIXME
         Ok(Utc.timestamp(sec.parse().map_err(|_| KatcpError::BadArgument)?, 0_u32))
     }

@@ -1,7 +1,8 @@
+use std::{collections::HashMap, iter::zip};
+
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use std::{collections::HashMap, iter::zip};
 use syn::{parse_macro_input, DataEnum, DeriveInput, Fields, FieldsNamed, Type, Variant};
 
 fn sort_variants(variants: Vec<Variant>) -> (Variant, Variant, Variant) {
@@ -11,27 +12,15 @@ fn sort_variants(variants: Vec<Variant>) -> (Variant, Variant, Variant) {
         sorted.insert(variant.ident.to_string(), variant);
     });
     (
-        sorted
-            .get("Request")
-            .expect("There must be a `Request` variant")
-            .to_owned(),
-        sorted
-            .get("Reply")
-            .expect("There must be a `Reply` variant")
-            .to_owned(),
-        sorted
-            .get("Inform")
-            .expect("There must be a `Inform` variant")
-            .to_owned(),
+        sorted.get("Request").expect("There must be a `Request` variant").to_owned(),
+        sorted.get("Reply").expect("There must be a `Reply` variant").to_owned(),
+        sorted.get("Inform").expect("There must be a `Inform` variant").to_owned(),
     )
 }
 
 fn get_named_fields(variant: &Variant) -> Vec<Ident> {
     if let Fields::Named(FieldsNamed { named, .. }) = variant.fields.clone() {
-        named
-            .iter()
-            .map(|f| f.ident.to_owned().expect("Field must be named"))
-            .collect()
+        named.iter().map(|f| f.ident.to_owned().expect("Field must be named")).collect()
     } else {
         panic!("Fields in message variants must be named")
     }
@@ -59,17 +48,15 @@ fn generate_serde(
     let fn_from = format_ident!("{}_from_{}_message", kind_str_lower, message_name_lower);
     let fields = get_named_fields(variant);
     let types = get_field_types(variant);
-    let arg_parses = zip(fields.clone(), types)
-        .enumerate()
-        .map(|(index, (ident, typ))| {
-            quote! {
-                let #ident = <#typ>::from_argument(           // Perform conversion, assuming field impls FromKatcpArgument
-                    msg.arguments
-                        .get(#index)                          // Get the index associated with this field
-                        .ok_or(KatcpError::MissingArgument)?, // Ensure it exists
-                )?;
-            }
-        });
+    let arg_parses = zip(fields.clone(), types).enumerate().map(|(index, (ident, typ))| {
+        quote! {
+            let #ident = <#typ>::from_argument(           // Perform conversion, assuming field impls FromKatcpArgument
+                msg.arguments
+                    .get(#index)                          // Get the index associated with this field
+                    .ok_or(KatcpError::MissingArgument)?, // Ensure it exists
+            )?;
+        }
+    });
     (
         quote! {
             fn #fn_to(msg: &#message_name) -> #arg_result_type {
