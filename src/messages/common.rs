@@ -8,7 +8,7 @@ use crate::{
 
 /// The trait that specific katcp messages should implement
 pub trait KatcpMessage: TryFrom<Message> {
-    fn into_message(self, id: Option<u32>) -> MessageResult;
+    fn to_message(&self, id: Option<u32>) -> MessageResult;
 }
 
 /// The trait that is implemented for all the fundamental katcp types
@@ -60,7 +60,7 @@ impl ToKatcpArgument for DateTime<Utc> {
     fn to_argument(&self) -> String {
         let secs = self.timestamp() as f64;
         let nano = self.timestamp_subsec_nanos();
-        let frac = (nano as f64) / 1e9;
+        let frac = nano as f64 / 1e9;
         format!("{}", secs + frac)
     }
 }
@@ -69,9 +69,10 @@ impl FromKatcpArgument for DateTime<Utc> {
     type Err = KatcpError;
 
     fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
-        let dot_idx = s.as_ref().find('.').unwrap_or_else(|| s.as_ref().chars().count());
-        let (sec, _) = s.as_ref().split_at(dot_idx); //TODO FIXME
-        Ok(Utc.timestamp(sec.parse().map_err(|_| KatcpError::BadArgument)?, 0_u32))
+        let fractional: f64 = s.as_ref().parse().map_err(|_| KatcpError::BadArgument)?;
+        let secs = fractional as i64;
+        let nanos = (fractional.fract() * 1e9) as u32;
+        Ok(Utc.timestamp(secs, nanos))
     }
 }
 
@@ -116,8 +117,23 @@ pub enum RetCode {
 
 // TODO integer, float, boolean, address
 
+/// Convienence method for round-trip testing
+pub(crate) fn roundtrip_test<T, E>(message: T)
+where
+    E: std::fmt::Debug,
+    T: KatcpMessage + PartialEq + std::fmt::Debug + TryFrom<Message, Error = E>,
+{
+    let raw = message.to_message(None).unwrap();
+    let s = raw.to_string();
+    // Print the middle, we're using this in tests, so we'll only see it on fails
+    println!("Katcp Payload:\n{}", s);
+    let raw_test: Message = (s.as_str()).try_into().unwrap();
+    let message_test = raw_test.try_into().unwrap();
+    assert_eq!(message, message_test)
+}
+
 #[cfg(test)]
-mod tests {
+mod test_arguments {
     use super::*;
 
     #[test]
@@ -126,14 +142,14 @@ mod tests {
         assert_eq!(s, String::from_argument(s.to_argument()).unwrap());
     }
 
-    // #[test]
-    // fn test_timestamp() {
-    //     let ts = Utc.timestamp(42069, 42069000);
-    //     assert_eq!(
-    //         ts,
-    //         DateTime::<Utc>::from_argument(ts.to_argument()).unwrap()
-    //     );
-    // }
+    #[test]
+    fn test_timestamp() {
+        let ts = Utc.timestamp(42069, 42069000);
+        assert_eq!(
+            ts,
+            DateTime::<Utc>::from_argument(ts.to_argument()).unwrap()
+        );
+    }
 
     #[test]
     fn test_option() {

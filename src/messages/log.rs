@@ -3,8 +3,9 @@
 //! # Examples
 //! ```rust
 //! use katcp::{messages::log::Log, protocol::Message};
-//! let log: Log =
-//!     r"#log warn 10000 device.sub-system Something\_may\_be\_wrong".try_into().unwrap();
+//! let log: Log = r"#log warn 10000 device.sub-system Something\_may\_be\_wrong"
+//!     .try_into()
+//!     .unwrap();
 //! ```
 use chrono::{DateTime, Utc};
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
@@ -74,9 +75,19 @@ pub enum LogLevel {
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
 pub enum Log {
-    Inform { level: LogLevel, timestamp: DateTime<Utc>, name: String, message: String },
-    Reply { ret_code: RetCode, level: LogLevel },
-    Request { level: Option<LogLevel> },
+    Inform {
+        level: LogLevel,
+        timestamp: DateTime<Utc>,
+        name: String,
+        message: String,
+    },
+    Reply {
+        ret_code: RetCode,
+        level: LogLevel,
+    },
+    Request {
+        level: Option<LogLevel>,
+    },
 }
 
 impl Log {
@@ -107,86 +118,26 @@ impl Log {
 }
 
 #[cfg(test)]
-mod log_tests {
+mod tests {
     use chrono::TimeZone;
 
     use super::*;
+    use crate::messages::common::roundtrip_test;
 
     #[test]
-    fn test_to_message() {
-        let time = Utc.timestamp(1234567, 1234567);
-        assert_eq!(
-            Message::new(MessageKind::Request, "log", None, vec!["fatal"]).unwrap(),
-            Log::request(Some(LogLevel::Fatal)).into_message(None).unwrap()
-        );
-        assert_eq!(
-            Message::new(MessageKind::Reply, "log", None, vec!["ok", "trace"]).unwrap(),
-            Log::reply(RetCode::Ok, LogLevel::Trace).into_message(None).unwrap()
-        );
-        assert_eq!(
-            Message::new(MessageKind::Inform, "log", None, vec![
-                "error",
-                "1234567.001234567",
-                "some.device.somewhere",
-                r"You\_goofed\_up",
-            ],)
-            .unwrap(),
-            Log::inform(LogLevel::Error, time, "some.device.somewhere", "You goofed up",)
-                .into_message(None)
-                .unwrap()
-        );
-    }
-
-    #[test]
-    fn test_from_message() {
-        let time = Utc.timestamp(1234567, 0);
-        assert_eq!(
-            Log::request(Some(LogLevel::Fatal)),
-            Message::new(MessageKind::Request, "log", None, vec!["fatal"])
-                .unwrap()
-                .try_into()
-                .unwrap()
-        );
-        assert_eq!(
-            Log::reply(RetCode::Ok, LogLevel::Trace),
-            Message::new(MessageKind::Reply, "log", None, vec!["ok", "trace"])
-                .unwrap()
-                .try_into()
-                .unwrap()
-        );
-        assert_eq!(
-            Log::inform(LogLevel::Error, time, "some.device.somewhere", "You goofed up"),
-            Message::new(MessageKind::Inform, "log", None, vec![
-                "error",
-                "1234567.0",
-                "some.device.somewhere",
-                r"You\_goofed\_up"
-            ])
-            .unwrap()
-            .try_into()
-            .unwrap(),
-        );
-    }
-
-    #[test]
-    fn test_from_message_str() {
-        assert_eq!(
-            Log::inform(LogLevel::Warn, Utc.timestamp(100, 0), "foo.bar.baz", "Hey there kiddo")
-                .into_message(None)
-                .unwrap(),
-            r"#log warn 100 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
-        );
-        assert_eq!(
-            Log::inform(LogLevel::Warn, Utc.timestamp(100, 0), "foo.bar.baz", "Hey there kiddo")
-                .into_message(Some(123))
-                .unwrap(),
-            r"#log[123] warn 100 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
-        );
-        assert_eq!(
-            Log::inform(LogLevel::Error, Utc.timestamp(420, 69), "foo.bar.baz", "Hey there kiddo")
-                .into_message(Some(123))
-                .unwrap(),
-            r"#log[123] error 420.000000069 foo.bar.baz Hey\_there\_kiddo".parse().unwrap()
-        );
+    fn test_log() {
+        roundtrip_test(Log::Inform {
+            level: LogLevel::Error,
+            timestamp: Utc.timestamp(420, 3),
+            name: "foo.bar.baz".to_owned(),
+            message: "This is a test message".to_owned(),
+        });
+        roundtrip_test(Log::Reply {
+            ret_code: RetCode::Ok,
+            level: LogLevel::Trace,
+        });
+        roundtrip_test(Log::Request {
+            level: Some(LogLevel::Info),
+        });
     }
 }
