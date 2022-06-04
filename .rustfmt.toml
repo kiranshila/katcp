@@ -1,6 +1,9 @@
 # Rustfmt configuration
 # https://github.com/rust-lang/rustfmt/blob/HEAD/Configurations.md
 
+# Use unstable
+unstable_features = true
+
 # Rustfmt cannot format long lines inside macros, but this option detects this.
 # This is unstable (tracking issue: https://github.com/rust-lang/rustfmt/issues/3391)
 error_on_line_overflow = true
