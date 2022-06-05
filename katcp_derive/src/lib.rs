@@ -160,6 +160,9 @@ fn generate_katcp_message_impl(
 }
 
 #[proc_macro_derive(KatcpMessage)]
+/// This derive macro creates serde methods for a decorated enum that has any of the variants `Request`, `Reply`, and `Inform`.
+/// The variants must have named data associated with them and every field of that data must impl `ToKatcpArgument` and `FromKatcpArgument`.
+/// The message name that is generated is a kebab-case version of the enum name.
 pub fn derive_katcp(tokens: TokenStream) -> TokenStream {
     // We need to parse out the name of the enum,
     // the three variants(inform, reply, request)
@@ -205,6 +208,9 @@ pub fn derive_katcp(tokens: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(KatcpDiscrete)]
+/// This derive macro decorates an enum where all the variants have no data and implement ToKatcpArgument
+/// and FromKatcpArgument for use with the [`KatcpMessage`] macro. This will create a bidirectional mapping
+/// between the variant names and a kebab-cased string of the variant (as per the spec)
 pub fn derive_katcp_discrete(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as DeriveInput);
     let enum_name = input.ident;
@@ -214,14 +220,14 @@ pub fn derive_katcp_discrete(tokens: TokenStream) -> TokenStream {
     };
     let to_str_pairs = variants.iter().map(|variant| {
         let ident = variant.ident.clone();
-        let ident_lowercase = variant.ident.to_string().to_lowercase();
+        let ident_lowercase = variant.ident.to_string().to_case(Case::Kebab);
         quote! {
             #enum_name::#ident => #ident_lowercase
         }
     });
     let from_str_pairs = variants.iter().map(|variant| {
         let ident = variant.ident.clone();
-        let ident_lowercase = variant.ident.to_string().to_lowercase();
+        let ident_lowercase = variant.ident.to_string().to_case(Case::Kebab);
         quote! {
             #ident_lowercase => #enum_name::#ident
         }

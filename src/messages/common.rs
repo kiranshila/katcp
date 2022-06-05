@@ -105,7 +105,7 @@ where
 
 // Return Code
 #[derive(KatcpDiscrete, Debug, PartialEq, Eq, Copy, Clone)]
-/// Return codes that form the first parameter of [`KatcpMethod::Reply`]
+/// Return codes that form the first parameter of [`KatcpKind::Reply`]
 pub enum RetCode {
     /// Request successfully processed. Further arguments are request-specific
     Ok,
