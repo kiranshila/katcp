@@ -11,13 +11,15 @@ pub trait KatcpMessage: TryFrom<Message> {
     fn to_message(&self, id: Option<u32>) -> MessageResult;
 }
 
-/// The trait that is implemented for all the fundamental katcp types
-/// as well any user defined types such as (C-like) enums
+/// Serializes the implemented type into an argument string
+/// Implemented for all fundamental katcp types as well as any user-defined types
 pub trait ToKatcpArgument {
     /// Create a katcp message argument (String) from a self
     fn to_argument(&self) -> String;
 }
 
+/// Deserializes an argument string into the implemented type
+/// Implemented for all fundamental katcp types as well as any user-defined types
 pub trait FromKatcpArgument
 where
     Self: Sized,
@@ -27,10 +29,25 @@ where
     fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err>;
 }
 
-pub trait KatcpArgument: ToKatcpArgument + FromKatcpArgument {}
+/// A trait for serializing more complex types that return the full argument vector
+pub trait ToKatcpArguments {
+    fn to_arguments(&self) -> Vec<String>;
+}
 
-// Default KatcpArgument - "Trait Marker"
+/// A trait for deserializing more complex types that consume an iterator of arguments
+pub trait FromKatcpArguments
+where
+    Self: Sized,
+{
+    type Err;
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err>;
+}
+
+// Marker Traits
+pub trait KatcpArgument: ToKatcpArgument + FromKatcpArgument {}
+pub trait KatcpArguments: ToKatcpArguments + FromKatcpArguments {}
 impl<T> KatcpArgument for T where T: ToKatcpArgument + FromKatcpArgument {}
+impl<T> KatcpArguments for T where T: ToKatcpArguments + FromKatcpArguments {}
 
 // ---- Implementations for the "core" KatcpTypes
 

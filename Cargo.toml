@@ -9,6 +9,7 @@ repository = "https://github.com/GReX-Telescope/katcp"
 [dependencies]
 nom = "7"
 chrono = "0.4"
+rustc_version = "0.4"
 
 [dependencies.katcp_derive]
 path = "katcp_derive"

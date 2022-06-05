@@ -1,10 +1,12 @@
-use std::{collections::HashMap, iter::zip};
+use std::collections::HashMap;
 
 use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
-use syn::{parse_macro_input, DataEnum, DeriveInput, Fields, FieldsNamed, Type, Variant};
+use syn::{
+    parse_macro_input, DataEnum, DeriveInput, Fields, FieldsNamed, FieldsUnnamed, Type, Variant,
+};
 
 fn sort_variants(variants: Vec<Variant>) -> (Option<Variant>, Option<Variant>, Option<Variant>) {
     assert!(
@@ -22,22 +24,111 @@ fn sort_variants(variants: Vec<Variant>) -> (Option<Variant>, Option<Variant>, O
     )
 }
 
-fn get_named_fields(variant: &Variant) -> Vec<Ident> {
+/// In the named case, we simply will call To/FromKatcpArgument for every field
+fn get_named_field_types_and_names(variant: &Variant) -> Option<Vec<(Ident, Type)>> {
     if let Fields::Named(FieldsNamed { named, .. }) = variant.fields.clone() {
-        named
-            .iter()
-            .map(|f| f.ident.to_owned().expect("Field must be named"))
-            .collect()
+        Some(
+            named
+                .iter()
+                // We can unwrap here because we've already checked that the fields are named in the if let
+                .map(|f| (f.ident.to_owned().unwrap(), f.ty.to_owned()))
+                .collect(),
+        )
     } else {
-        panic!("Fields in message variants must be named")
+        None
     }
 }
 
-fn get_field_types(variant: &Variant) -> Vec<Type> {
-    if let Fields::Named(FieldsNamed { named, .. }) = variant.fields.clone() {
-        named.iter().map(|f| f.ty.to_owned()).collect()
+// In the unnamed case, there will be exactly zero or one field
+// In the zero case, its an empty arugment list, in the one case we call To/FromKatcpArguments
+// to support non CFGs
+fn get_unnamed_field_types(variant: &Variant) -> Option<Vec<Type>> {
+    if let Fields::Unnamed(FieldsUnnamed { unnamed, .. }) = variant.fields.clone() {
+        Some(unnamed.iter().map(|f| f.ty.to_owned()).collect())
     } else {
-        panic!("Fields in message variants must be named")
+        None
+    }
+}
+
+fn generate_named_serde(variant: &Variant, fields: Vec<(Ident, Type)>) -> proc_macro2::TokenStream {
+    let kind = variant.ident.to_owned();
+    // Two function names
+    let fn_to_variant = format_ident!(
+        "to_{}_variant",
+        variant.ident.to_owned().to_string().to_lowercase()
+    );
+    let fn_to_message_args = format_ident!(
+        "to_{}_message_args",
+        variant.ident.to_owned().to_string().to_lowercase()
+    );
+    // Iterator for Message -> Variant fn
+    let arg_parses = fields.iter().enumerate().map(|(index, (ident, typ))| {
+        quote! {
+            let #ident = <#typ>::from_argument(           // Perform conversion, assuming field impls FromKatcpArgument
+                msg.arguments
+                    .get(#index)                          // Get the index associated with this field
+                    .ok_or(KatcpError::MissingArgument)?, // Ensure it exists
+            )?;
+        }
+    });
+    // The serde methods themselves
+    let names: Vec<Ident> = fields.iter().map(|e| e.clone().0).collect();
+    quote! {
+        fn #fn_to_message_args(&self) -> Result<(MessageKind, Vec<String>),KatcpError> {
+            if let Self::#kind {
+                #(#names),*
+            } = self {
+                #(let #names = #names.to_argument();)* // Assume field impls ToKatcpArgument
+                Ok((MessageKind::#kind, vec![#(#names),*]))
+            } else {
+                Err(KatcpError::BadArgument)
+            }
+        }
+        fn #fn_to_variant(msg: &Message) -> Result<Self,KatcpError> {
+            #(#arg_parses)*
+            Ok(Self::#kind{ #(#names),* })
+        }
+    }
+}
+
+fn generate_unnamed_serde(variant: &Variant, ty: Vec<Type>) -> proc_macro2::TokenStream {
+    let kind = variant.ident.to_owned();
+    // Two function names
+    let fn_to_variant = format_ident!(
+        "to_{}_variant",
+        variant.ident.to_owned().to_string().to_lowercase()
+    );
+    let fn_to_message_args = format_ident!(
+        "to_{}_message_args",
+        variant.ident.to_owned().to_string().to_lowercase()
+    );
+    if ty.len() == 0 {
+        quote! {
+             fn #fn_to_message_args(&self) -> Result<(MessageKind, Vec<String>), KatcpError> {
+                 Ok((MessageKind::#kind, Vec::<String>::new()))
+             }
+             fn #fn_to_variant(msg: &Message) -> Result<Self, KatcpError> {
+                 Ok(Self::#kind)
+             }
+        }
+    } else if ty.len() == 1 {
+        let ty = ty.get(0).unwrap();
+        quote! {
+            fn #fn_to_message_args(&self) -> Result<(MessageKind, Vec<String>), KatcpError> {
+                if let Self::#kind (field) = self {
+                    Ok((MessageKind::#kind, field.to_arguments()))
+                } else {
+                    Err(KatcpError::BadArgument)
+                }
+            }
+            fn #fn_to_variant(msg: &Message) -> Result<Self, KatcpError> {
+                // This seems bad
+                let mut arg_iter = msg.arguments.clone().into_iter();
+                Ok(Self::#kind(<#ty>::from_arguments(&mut arg_iter)?))
+            }
+        }
+    } else {
+        panic!("Unanmed variants must have at most 1 field")
     }
 }
 
@@ -49,42 +140,20 @@ fn generate_serde(variant: &Option<Variant>) -> proc_macro2::TokenStream {
     } else {
         return quote! {};
     };
-    let kind = variant.ident.to_owned();
-    let kind_str_lower = kind.to_string().to_lowercase();
-    // Two function names
-    let fn_to_variant = format_ident!("to_{}_variant", kind_str_lower);
-    let fn_to_message_args = format_ident!("to_{}_message_args", kind_str_lower);
-    // Iterators
-    let fields = get_named_fields(variant);
-    let types = get_field_types(variant);
-    // Iterator for Message -> Variant fn
-    let arg_parses = zip(fields.clone(), types)
-        .enumerate()
-        .map(|(index, (ident, typ))| {
-            quote! {
-                let #ident = <#typ>::from_argument(           // Perform conversion, assuming field impls FromKatcpArgument
-                    msg.arguments
-                        .get(#index)                          // Get the index associated with this field
-                        .ok_or(KatcpError::MissingArgument)?, // Ensure it exists
-                )?;
-            }
-        });
-    // The serde methods
-    quote! {
-        fn #fn_to_message_args(&self) -> Result<(MessageKind, Vec<String>),KatcpError> {
-            if let Self::#kind {
-                #(#fields),*
-            } = self {
-                #(let #fields = #fields.to_argument();)* // Assume field impls ToKatcpArgument
-                Ok((MessageKind::#kind, vec![#(#fields),*]))
-            } else {
-                Err(KatcpError::BadArgument)
-            }
-        }
-        fn #fn_to_variant(msg: &Message) -> Result<Self,KatcpError> {
-            #(#arg_parses)*
-            Ok(Self::#kind{ #(#fields),* })
-        }
+    // Grab fields
+    let fields_named = get_named_field_types_and_names(&variant);
+    let fields_unnamed = get_unnamed_field_types(&variant);
+    // Check to make sure our fields are homogeneous
+    if fields_named.is_some() && fields_unnamed.is_some() {
+        panic!("Variant can only have named or unnamed fields, not both");
+    }
+    // Check fields and dispatch
+    if let Some(fields) = fields_named {
+        generate_named_serde(&variant, fields)
+    } else if let Some(fields) = fields_unnamed {
+        generate_unnamed_serde(&variant, fields)
+    } else {
+        generate_unnamed_serde(&variant, Vec::<Type>::new())
     }
 }
 

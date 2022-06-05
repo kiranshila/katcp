@@ -2,87 +2,89 @@
 //! and querying it for some basic information about itself. KATCP devices are required to implement all of the
 //! messages in this section.
 
-use katcp_derive::KatcpMessage;
+use katcp_derive::{KatcpDiscrete, KatcpMessage};
+use rustc_version;
 
 use crate::prelude::*;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
+/// A Reply type that contains no data in the Ok branch or a message in the error branch
+pub enum GenericReply {
+    Ok,
+    Error { ret_code: RetCode, message: String },
+}
+
+impl ToKatcpArguments for GenericReply {
+    fn to_arguments(&self) -> Vec<String> {
+        match self {
+            Self::Ok => vec![(RetCode::Ok).to_argument()],
+            Self::Error { ret_code, message } => {
+                vec![ret_code.to_argument(), message.clone().to_argument()]
+            }
+        }
+    }
+}
+
+impl FromKatcpArguments for GenericReply {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let ret_code = RetCode::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        Ok(match ret_code {
+            RetCode::Ok => Self::Ok,
+            _ => Self::Error {
+                ret_code,
+                message: String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+            },
+        })
+    }
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Requesting a Halt should trigger a software halt
 /// It is expected to close the connection and put the
 /// software and hardware into a state where it is safe to power down. The reply message should be sent just
 /// before the halt occurs
 pub enum Halt {
     Request,
-    Reply {
-        ret_code: RetCode,
-        message: Option<String>,
-    },
+    Reply(GenericReply),
 }
 
-// We have to do a manual implementation here because katcp chose to make their argument grammar not context free
-impl TryFrom<Message> for Halt {
-    type Error = KatcpError;
-    fn try_from(message: Message) -> Result<Self, Self::Error> {
-        if message.name != "halt" {
-            return Err(KatcpError::IncorrectType);
-        }
-        match message.kind {
-            MessageKind::Request => Ok(Halt::Request),
-            MessageKind::Reply => {
-                let ret_code = RetCode::from_argument(
-                    message
-                        .arguments
-                        .get(0)
-                        .ok_or(KatcpError::MissingArgument)?,
-                )?;
-                let message = if !matches!(ret_code, RetCode::Ok) {
-                    Some(String::from_argument(
-                        message
-                            .arguments
-                            .get(1)
-                            .ok_or(KatcpError::MissingArgument)?,
-                    )?)
-                } else {
-                    None
-                };
-                Ok(Halt::Reply { ret_code, message })
-            }
-            MessageKind::Inform => unimplemented!(),
-        }
-    }
+#[derive(Debug, PartialEq, Eq, Clone)]
+/// A Reply type that is an integer in the Ok branch or a message in the error branch
+pub enum IntReply {
+    Ok { num: u32 },
+    Error { ret_code: RetCode, message: String },
 }
 
-impl KatcpMessage for Halt {
-    fn to_message(&self, id: Option<u32>) -> MessageResult {
-        // Safety: No args, no safety concerns
+impl ToKatcpArguments for IntReply {
+    fn to_arguments(&self) -> Vec<String> {
         match self {
-            Halt::Request => Ok(unsafe {
-                Message::new_unchecked(MessageKind::Request, "halt", id, Vec::<String>::new())
-            }),
-            Halt::Reply { ret_code, message } => Ok(if matches!(ret_code, RetCode::Ok) {
-                unsafe {
-                    Message::new_unchecked(MessageKind::Reply, "halt", id, vec![
-                        ret_code.to_argument()
-                    ])
-                }
-            } else {
-                // Safety: message.to_argument() escapes, so we're good there
-                unsafe {
-                    Message::new_unchecked(MessageKind::Reply, "halt", id, vec![
-                        ret_code.to_argument(),
-                        message.to_argument(),
-                    ])
-                }
-            }),
+            Self::Ok { num } => {
+                vec![(RetCode::Ok).to_argument(), num.to_argument()]
+            }
+            Self::Error { ret_code, message } => {
+                vec![ret_code.to_argument(), message.clone().to_argument()]
+            }
         }
     }
 }
 
-impl TryFrom<&str> for Halt {
-    type Error = KatcpError;
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let message: Message = s.try_into()?;
-        message.try_into()
+impl FromKatcpArguments for IntReply {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let ret_code = RetCode::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let num_or_msg = strings.next().ok_or(KatcpError::MissingArgument)?;
+        Ok(match ret_code {
+            RetCode::Ok => Self::Ok {
+                num: u32::from_argument(num_or_msg)?,
+            },
+            _ => Self::Error {
+                ret_code,
+                message: String::from_argument(num_or_msg)?,
+            },
+        })
     }
 }
 
@@ -93,109 +95,38 @@ pub enum Help {
     /// tion (as commonly seen in the usage strings of UNIX command-line utilities and the synopsis sections
     /// of man pages). Brackets ([]) surround optional arguments, vertical bars (|) separate choices, and ellipses
     /// (...) can be repeated.
-    Inform { name: String, description: String },
+    Inform {
+        name: String,
+        description: String,
+    },
     /// Before sending a reply, the help request will send a number of #help inform messages. If no name
     /// parameter is sent the help request will return one inform message for each request available on the device.
     /// If a name parameter is specified, only an inform message for that request will be sent. On success the
     /// first reply parameter after the status code will contain the number of help inform messages generated by
     /// this request. If the name parameter does not correspond to a request on the device, a reply with a failure
     /// code and message should be sent
-    Request { name: Option<String> },
-    /// In the case that `ret_code` here is [`RetCode::Ok`], the `message` will contain the number of help message
-    /// informs that were sent. This makes the argument grammar non context free, so we'll leave that sum type implementation
-    /// up to the client/server implementer
-    Reply {
-        ret_code: RetCode,
-        message: Option<String>,
+    Request {
+        name: Option<String>,
     },
+    Reply(IntReply),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
 /// Requesting a restart should trigger a software reset. It is expected to close the connection, reload the
 /// software and begin execution again, preferably without changing the hardware configuration (if possible).
 /// It would end with the device being ready to accept new connections again. The reply should be sent before
 /// the connection to the current client is closed.
 pub enum Restart {
     Request,
-    Reply {
-        ret_code: RetCode,
-        message: Option<String>,
-    },
-}
-
-// We have to do a manual implementation here because katcp chose to make their argument grammar not context free
-impl TryFrom<Message> for Restart {
-    type Error = KatcpError;
-    fn try_from(message: Message) -> Result<Self, Self::Error> {
-        if message.name != "restart" {
-            return Err(KatcpError::IncorrectType);
-        }
-        match message.kind {
-            MessageKind::Request => Ok(Restart::Request),
-            MessageKind::Reply => {
-                let ret_code = RetCode::from_argument(
-                    message
-                        .arguments
-                        .get(0)
-                        .ok_or(KatcpError::MissingArgument)?,
-                )?;
-                let message = if !matches!(ret_code, RetCode::Ok) {
-                    Some(String::from_argument(
-                        message
-                            .arguments
-                            .get(1)
-                            .ok_or(KatcpError::MissingArgument)?,
-                    )?)
-                } else {
-                    None
-                };
-                Ok(Restart::Reply { ret_code, message })
-            }
-            MessageKind::Inform => unimplemented!(),
-        }
-    }
-}
-
-impl KatcpMessage for Restart {
-    fn to_message(&self, id: Option<u32>) -> MessageResult {
-        // Safety: No args, no safety concerns
-        match self {
-            Restart::Request => Ok(unsafe {
-                Message::new_unchecked(MessageKind::Request, "restart", id, Vec::<String>::new())
-            }),
-            Restart::Reply { ret_code, message } => Ok(if matches!(ret_code, RetCode::Ok) {
-                unsafe {
-                    Message::new_unchecked(MessageKind::Reply, "restart", id, vec![
-                        ret_code.to_argument()
-                    ])
-                }
-            } else {
-                // Safety: message.to_argument() escapes, so we're good there
-                unsafe {
-                    Message::new_unchecked(MessageKind::Reply, "restart", id, vec![
-                        ret_code.to_argument(),
-                        message.to_argument(),
-                    ])
-                }
-            }),
-        }
-    }
-}
-
-impl TryFrom<&str> for Restart {
-    type Error = KatcpError;
-    fn try_from(s: &str) -> Result<Self, Self::Error> {
-        let message: Message = s.try_into()?;
-        message.try_into()
-    }
+    Reply(GenericReply),
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
 /// Requesting a watchdog may be sent by the client occasionally to check that the connection to the
 /// device is still active. The device should respond with a success reply if it receives the watchdog request
 pub enum Watchdog {
-    Request {},
-    Reply { ret_code: RetCode },
+    Request,
+    Reply(GenericReply),
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
@@ -210,14 +141,129 @@ pub enum VersionList {
         /// of this argument as they choose. In the absence of other information clients should treat it as
         /// an opaque string
         version: String,
-        /// a unique identifier for a particular instance of a componen
+        /// a unique identifier for a particular instance of a component. This is either the "build-state" or "serial-number"
         uuid: String,
     },
-    Request {},
-    Reply {
-        ret_code: RetCode,
-        num_informs: u32,
+    Request,
+    /// The [`VersionList`] reply's Ok branch will contain the number of informs that were sent
+    Reply(IntReply),
+}
+
+// Async informs, these only have `Inform` fields
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Sent to the client by the device shortly before the client is disconnected. In the case where a client is being
+/// disconnected because a new client has connected, the message should include
+/// the IP number and port of the new client for tracking purposes.
+pub enum Disconnect {
+    Inform { message: String },
+}
+
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+/// The three different types of [`VersionConnect`] inform messages
+pub enum VersionConnectName {
+    KatcpProtocol,
+    KatcpLibrary,
+    KatcpDevice,
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Sent to the client when it connects. These inform messages use the same argument format as [`VersionList`]
+/// and all roles and components declared via [`VersionConnect`] should be included in the informs sent in
+/// response to [`VersionList`].
+pub enum VersionConnect {
+    Inform {
+        name: VersionConnectName,
+        version: String,
+        build_or_serial: String,
     },
+}
+
+impl VersionConnect {
+    /// Returns a [`VersionConnect`] of `name:`[`VersionConnectName::KatcpLibrary`] for this rust library
+    pub fn library() -> Self {
+        let version = env!("CARGO_PKG_VERSION");
+        let target = rustc_version::version().unwrap();
+        Self::Inform {
+            name: VersionConnectName::KatcpLibrary,
+            version: format!("katcp-{}", version),
+            build_or_serial: format!("rustc-{}", target),
+        }
+    }
+}
+
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+/// On specific [`InterfaceChanged`] informs, these specify how precisely the interface was changed
+pub enum ChangeSpecificationAction {
+    Added,
+    Removed,
+    Modified,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum InterfaceChangeInform {
+    SensorList,
+    RequestList,
+    Sensor {
+        name: String,
+        action: ChangeSpecificationAction,
+    },
+    Request {
+        name: String,
+        action: ChangeSpecificationAction,
+    },
+}
+
+impl ToKatcpArguments for InterfaceChangeInform {
+    fn to_arguments(&self) -> Vec<String> {
+        match self {
+            Self::SensorList => vec!["sensor-list".to_owned()],
+            Self::RequestList => vec!["request-list".to_owned()],
+            Self::Sensor { name, action } => vec![
+                "sensor".to_owned(),
+                name.to_argument(),
+                action.to_argument(),
+            ],
+            Self::Request { name, action } => vec![
+                "request".to_owned(),
+                name.to_argument(),
+                action.to_argument(),
+            ],
+        }
+    }
+}
+impl FromKatcpArguments for InterfaceChangeInform {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let inform_type = strings.next().ok_or(KatcpError::MissingArgument)?;
+        match inform_type.as_str() {
+            "sensor-list" => Ok(Self::SensorList),
+            "request-list" => Ok(Self::RequestList),
+            "sensor" => Ok(Self::Sensor {
+                name: String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                action: ChangeSpecificationAction::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            }),
+            "request" => Ok(Self::Request {
+                name: String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                action: ChangeSpecificationAction::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            }),
+            _ => Err(KatcpError::BadArgument),
+        }
+    }
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Only required for dynamic devices, i.e. devices that may change their katcp interface during a connection.
+/// Sent to the client by the device to indicate that the katcp interface has changed. Passing no arguments
+/// with the inform implies that the whole katcp interface may have changed. The optional parameters allow
+/// more fine grained specification of what changed:
+pub enum InterfaceChanged {
+    Inform(InterfaceChangeInform),
 }
 
 #[cfg(test)]
@@ -228,14 +274,11 @@ mod tests {
     #[test]
     fn test_halt() {
         roundtrip_test(Halt::Request);
-        roundtrip_test(Halt::Reply {
-            ret_code: RetCode::Invalid,
-            message: Some("You messed up".to_owned()),
-        });
-        roundtrip_test(Halt::Reply {
-            ret_code: RetCode::Ok,
-            message: None,
-        });
+        roundtrip_test(Halt::Reply(GenericReply::Ok));
+        roundtrip_test(Halt::Reply(GenericReply::Error {
+            ret_code: RetCode::Fail,
+            message: "You Messed Up".to_owned(),
+        }));
     }
 
     #[test]
@@ -244,27 +287,27 @@ mod tests {
         roundtrip_test(Help::Request {
             name: Some("my_special_message".to_owned()),
         });
+        roundtrip_test(Help::Reply(IntReply::Ok { num: 10 }));
+        roundtrip_test(Help::Reply(IntReply::Error {
+            ret_code: RetCode::Fail,
+            message: "Something went wrong".to_owned(),
+        }));
     }
 
     #[test]
     fn test_restart() {
         roundtrip_test(Restart::Request);
-        roundtrip_test(Restart::Reply {
-            ret_code: RetCode::Invalid,
-            message: Some("You messed up".to_owned()),
-        });
-        roundtrip_test(Restart::Reply {
-            ret_code: RetCode::Ok,
-            message: None,
-        });
+        roundtrip_test(Restart::Reply(GenericReply::Ok));
+        roundtrip_test(Restart::Reply(GenericReply::Error {
+            ret_code: RetCode::Fail,
+            message: "You Messed Up".to_owned(),
+        }));
     }
 
     #[test]
     fn test_watchdog() {
-        roundtrip_test(Watchdog::Request {});
-        roundtrip_test(Watchdog::Reply {
-            ret_code: RetCode::Ok,
-        });
+        roundtrip_test(Watchdog::Request);
+        roundtrip_test(Watchdog::Reply(GenericReply::Ok));
     }
 
     #[test]
@@ -275,9 +318,36 @@ mod tests {
             version: "0.1.2.3rev10".to_owned(),
             uuid: "asdb132b34j".to_owned(),
         });
-        roundtrip_test(VersionList::Reply {
-            ret_code: RetCode::Ok,
-            num_informs: 300,
-        })
+        roundtrip_test(VersionList::Reply(IntReply::Ok { num: 300 }));
+        roundtrip_test(VersionList::Reply(IntReply::Error {
+            ret_code: RetCode::Invalid,
+            message: "Please fix me\nThis is bad".to_owned(),
+        }))
+    }
+
+    #[test]
+    fn test_disconnect() {
+        roundtrip_test(Disconnect::Inform {
+            message: "New client connected from 192.168.1.100:24500".to_owned(),
+        });
+    }
+
+    #[test]
+    fn test_version_connect() {
+        roundtrip_test(VersionConnect::library());
+    }
+
+    #[test]
+    fn test_interface_changed() {
+        roundtrip_test(InterfaceChanged::Inform(InterfaceChangeInform::SensorList));
+        roundtrip_test(InterfaceChanged::Inform(InterfaceChangeInform::RequestList));
+        roundtrip_test(InterfaceChanged::Inform(InterfaceChangeInform::Sensor {
+            name: "name.of.fancy.sensor".to_owned(),
+            action: ChangeSpecificationAction::Added,
+        }));
+        roundtrip_test(InterfaceChanged::Inform(InterfaceChangeInform::Request {
+            name: "name.of.fancy.sensor".to_owned(),
+            action: ChangeSpecificationAction::Removed,
+        }));
     }
 }

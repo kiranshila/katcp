@@ -3,6 +3,9 @@
 //! for deriving `KatcpMessage` from the `katcp_derive` trait
 
 pub use crate::{
-    messages::common::{FromKatcpArgument, KatcpArgument, KatcpMessage, RetCode, ToKatcpArgument},
+    messages::common::{
+        FromKatcpArgument, FromKatcpArguments, KatcpArgument, KatcpMessage, RetCode,
+        ToKatcpArgument, ToKatcpArguments,
+    },
     protocol::{KatcpError, Message, MessageKind, MessageResult},
 };
