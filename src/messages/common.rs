@@ -118,7 +118,7 @@ pub enum RetCode {
 // TODO integer, float, boolean, address
 
 /// Convienence method for round-trip testing
-pub(crate) fn roundtrip_test<T, E>(message: T)
+pub fn roundtrip_test<T, E>(message: T)
 where
     E: std::fmt::Debug,
     T: KatcpMessage + PartialEq + std::fmt::Debug + TryFrom<Message, Error = E>,

@@ -110,13 +110,90 @@ pub enum Help {
     },
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 /// Requesting a restart should trigger a software reset. It is expected to close the connection, reload the
 /// software and begin execution again, preferably without changing the hardware configuration (if possible).
 /// It would end with the device being ready to accept new connections again. The reply should be sent before
 /// the connection to the current client is closed.
 pub enum Restart {
-    Inform {},
+    Request,
+    Reply {
+        ret_code: RetCode,
+        message: Option<String>,
+    },
+}
+
+// We have to do a manual implementation here because katcp chose to make their argument grammar not context free
+impl TryFrom<Message> for Restart {
+    type Error = KatcpError;
+    fn try_from(message: Message) -> Result<Self, Self::Error> {
+        if message.name != "restart" {
+            return Err(KatcpError::IncorrectType);
+        }
+        match message.kind {
+            MessageKind::Request => Ok(Restart::Request),
+            MessageKind::Reply => {
+                let ret_code = RetCode::from_argument(
+                    message
+                        .arguments
+                        .get(0)
+                        .ok_or(KatcpError::MissingArgument)?,
+                )?;
+                let message = if !matches!(ret_code, RetCode::Ok) {
+                    Some(String::from_argument(
+                        message
+                            .arguments
+                            .get(1)
+                            .ok_or(KatcpError::MissingArgument)?,
+                    )?)
+                } else {
+                    None
+                };
+                Ok(Restart::Reply { ret_code, message })
+            }
+            MessageKind::Inform => unimplemented!(),
+        }
+    }
+}
+
+impl KatcpMessage for Restart {
+    fn to_message(&self, id: Option<u32>) -> MessageResult {
+        // Safety: No args, no safety concerns
+        match self {
+            Restart::Request => Ok(unsafe {
+                Message::new_unchecked(MessageKind::Request, "restart", id, Vec::<String>::new())
+            }),
+            Restart::Reply { ret_code, message } => Ok(if matches!(ret_code, RetCode::Ok) {
+                unsafe {
+                    Message::new_unchecked(MessageKind::Reply, "restart", id, vec![
+                        ret_code.to_argument()
+                    ])
+                }
+            } else {
+                // Safety: message.to_argument() escapes, so we're good there
+                unsafe {
+                    Message::new_unchecked(MessageKind::Reply, "restart", id, vec![
+                        ret_code.to_argument(),
+                        message.to_argument(),
+                    ])
+                }
+            }),
+        }
+    }
+}
+
+impl TryFrom<&str> for Restart {
+    type Error = KatcpError;
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        let message: Message = s.try_into()?;
+        message.try_into()
+    }
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Requesting a watchdog may be sent by the client occasionally to check that the connection to the
+/// device is still active. The device should respond with a success reply if it receives the watchdog request
+pub enum Watchdog {
     Request {},
     Reply { ret_code: RetCode },
 }
@@ -144,6 +221,27 @@ mod tests {
         roundtrip_test(Help::Request { name: None });
         roundtrip_test(Help::Request {
             name: Some("my_special_message".to_owned()),
+        });
+    }
+
+    #[test]
+    fn test_restart() {
+        roundtrip_test(Restart::Request);
+        roundtrip_test(Restart::Reply {
+            ret_code: RetCode::Invalid,
+            message: Some("You messed up".to_owned()),
+        });
+        roundtrip_test(Restart::Reply {
+            ret_code: RetCode::Ok,
+            message: None,
+        });
+    }
+
+    #[test]
+    fn test_watchdog() {
+        roundtrip_test(Watchdog::Request {});
+        roundtrip_test(Watchdog::Reply {
+            ret_code: RetCode::Ok,
         });
     }
 }
