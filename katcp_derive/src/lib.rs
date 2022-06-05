@@ -1,5 +1,6 @@
 use std::{collections::HashMap, iter::zip};
 
+use convert_case::{Case, Casing};
 use proc_macro::TokenStream;
 use proc_macro2::Ident;
 use quote::{format_ident, quote};
@@ -91,7 +92,7 @@ fn generate_try_from(
     message_name: &Ident,
     sorted_variants: &(Option<Variant>, Option<Variant>, Option<Variant>),
 ) -> proc_macro2::TokenStream {
-    let message_str = message_name.to_string().to_lowercase();
+    let message_str = message_name.to_string().to_case(Case::Kebab);
     let request_fn = sorted_variants.0.as_ref().map_or(
         quote! {unimplemented!()},
         |_| quote! {#message_name::to_request_variant(&message)},
@@ -125,8 +126,7 @@ fn generate_katcp_message_impl(
     message_name: &Ident,
     sorted_variants: &(Option<Variant>, Option<Variant>, Option<Variant>),
 ) -> proc_macro2::TokenStream {
-    let message_str = message_name.to_string().to_lowercase();
-
+    let message_str = message_name.to_string().to_case(Case::Kebab);
     let request_fn = sorted_variants.0.as_ref().map_or(quote! {}, |_| {
         quote! {
             v @ Self::Request { .. } => v.to_request_message_args()?,

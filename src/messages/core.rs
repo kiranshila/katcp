@@ -198,6 +198,28 @@ pub enum Watchdog {
     Reply { ret_code: RetCode },
 }
 
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Before sending a reply the ?version-list command will send a
+/// series of #version-list informs. The list of informs should include all of the roles and components
+/// returned via #version-connect but may contain additional roles or components.
+pub enum VersionList {
+    Inform {
+        /// the name of the role or component the version information applies to
+        name: String,
+        /// a string identifying the version of the component. Individual components may define the structure
+        /// of this argument as they choose. In the absence of other information clients should treat it as
+        /// an opaque string
+        version: String,
+        /// a unique identifier for a particular instance of a componen
+        uuid: String,
+    },
+    Request {},
+    Reply {
+        ret_code: RetCode,
+        num_informs: u32,
+    },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +265,19 @@ mod tests {
         roundtrip_test(Watchdog::Reply {
             ret_code: RetCode::Ok,
         });
+    }
+
+    #[test]
+    fn test_version_list() {
+        roundtrip_test(VersionList::Request {});
+        roundtrip_test(VersionList::Inform {
+            name: "my-special-device".to_owned(),
+            version: "0.1.2.3rev10".to_owned(),
+            uuid: "asdb132b34j".to_owned(),
+        });
+        roundtrip_test(VersionList::Reply {
+            ret_code: RetCode::Ok,
+            num_informs: 300,
+        })
     }
 }

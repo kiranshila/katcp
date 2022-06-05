@@ -115,7 +115,53 @@ pub enum RetCode {
     Fail,
 }
 
-// TODO integer, float, boolean, address
+impl ToKatcpArgument for u32 {
+    fn to_argument(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl FromKatcpArgument for u32 {
+    type Err = KatcpError;
+
+    fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
+        s.as_ref().parse().map_err(|_| KatcpError::BadArgument)
+    }
+}
+
+impl ToKatcpArgument for i32 {
+    fn to_argument(&self) -> String {
+        self.to_string()
+    }
+}
+
+impl FromKatcpArgument for i32 {
+    type Err = KatcpError;
+
+    fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
+        s.as_ref().parse().map_err(|_| KatcpError::BadArgument)
+    }
+}
+
+impl ToKatcpArgument for bool {
+    fn to_argument(&self) -> String {
+        (if *self { "1" } else { "0" }).to_owned()
+    }
+}
+
+impl FromKatcpArgument for bool {
+    type Err = KatcpError;
+
+    fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
+        match s.as_ref() {
+            "1" => Ok(true),
+            "0" => Ok(false),
+            _ => Err(KatcpError::BadArgument),
+        }
+    }
+}
+
+// TODO float, address
 
 /// Convienence method for round-trip testing
 pub fn roundtrip_test<T, E>(message: T)
@@ -161,5 +207,21 @@ mod test_arguments {
     fn test_ret_code() {
         let code = RetCode::Invalid;
         assert_eq!(code, RetCode::from_argument(code.to_argument()).unwrap())
+    }
+
+    #[test]
+    fn test_int() {
+        let pos_int = 12345;
+        let neg_int = -12345;
+        assert_eq!(pos_int, u32::from_argument(pos_int.to_argument()).unwrap());
+        assert_eq!(neg_int, i32::from_argument(neg_int.to_argument()).unwrap());
+    }
+
+    #[test]
+    fn test_bool() {
+        let a = true;
+        let b = false;
+        assert_eq!(a, bool::from_argument(a.to_argument()).unwrap());
+        assert_eq!(b, bool::from_argument(b.to_argument()).unwrap());
     }
 }
