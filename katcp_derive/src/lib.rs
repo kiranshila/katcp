@@ -102,7 +102,7 @@ fn generate_unnamed_serde(variant: &Variant, ty: Vec<Type>) -> proc_macro2::Toke
         "to_{}_message_args",
         variant.ident.to_owned().to_string().to_lowercase()
     );
-    if ty.len() == 0 {
+    if ty.is_empty() {
         quote! {
              fn #fn_to_message_args(&self) -> Result<(MessageKind, Vec<String>), KatcpError> {
                  Ok((MessageKind::#kind, Vec::<String>::new()))
@@ -141,19 +141,19 @@ fn generate_serde(variant: &Option<Variant>) -> proc_macro2::TokenStream {
         return quote! {};
     };
     // Grab fields
-    let fields_named = get_named_field_types_and_names(&variant);
-    let fields_unnamed = get_unnamed_field_types(&variant);
+    let fields_named = get_named_field_types_and_names(variant);
+    let fields_unnamed = get_unnamed_field_types(variant);
     // Check to make sure our fields are homogeneous
     if fields_named.is_some() && fields_unnamed.is_some() {
         panic!("Variant can only have named or unnamed fields, not both");
     }
     // Check fields and dispatch
     if let Some(fields) = fields_named {
-        generate_named_serde(&variant, fields)
+        generate_named_serde(variant, fields)
     } else if let Some(fields) = fields_unnamed {
-        generate_unnamed_serde(&variant, fields)
+        generate_unnamed_serde(variant, fields)
     } else {
-        generate_unnamed_serde(&variant, Vec::<Type>::new())
+        generate_unnamed_serde(variant, Vec::<Type>::new())
     }
 }
 
