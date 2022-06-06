@@ -189,18 +189,71 @@ pub enum SamplingStrategy {
     },
 }
 
-impl ToKatcpArgument for SamplingStrategy {
-    fn to_argument(&self) -> String {
+impl ToKatcpArguments for SamplingStrategy {
+    fn to_arguments(&self) -> Vec<String> {
         match self {
-            SamplingStrategy::Auto => "auto",
-            SamplingStrategy::None => "none",
-            SamplingStrategy::Period { .. } => "period",
-            SamplingStrategy::Event => "event",
-            SamplingStrategy::Differential { .. } => "differential",
-            SamplingStrategy::EventRate { .. } => "event-rate",
-            SamplingStrategy::DifferentialRate { .. } => "differential-rate",
+            SamplingStrategy::Auto => vec!["auto".to_owned()],
+            SamplingStrategy::None => vec!["none".to_owned()],
+            SamplingStrategy::Period { period } => vec!["period".to_owned(), period.to_argument()],
+            SamplingStrategy::Event => vec!["event".to_owned()],
+            SamplingStrategy::Differential { difference } => {
+                vec!["differential".to_owned(), difference.to_argument()]
+            }
+            SamplingStrategy::EventRate {
+                shortest_period,
+                longest_period,
+            } => vec![
+                "event-rate".to_owned(),
+                shortest_period.to_argument(),
+                longest_period.to_argument(),
+            ],
+            SamplingStrategy::DifferentialRate {
+                difference,
+                shortest_period,
+                longest_period,
+            } => vec![
+                "differential-rate".to_owned(),
+                difference.to_argument(),
+                shortest_period.to_argument(),
+                longest_period.to_argument(),
+            ],
         }
-        .to_owned()
+    }
+}
+
+impl FromKatcpArguments for SamplingStrategy {
+    type Err = KatcpError;
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, KatcpError> {
+        let strat = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        Ok(match strat.as_str() {
+            "auto" => SamplingStrategy::Auto,
+            "none" => SamplingStrategy::None,
+            "period" => SamplingStrategy::Period {
+                period: f32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+            },
+            "event" => SamplingStrategy::Event,
+            "differential" => SamplingStrategy::Differential {
+                difference: f32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+            },
+            "event-rate" => SamplingStrategy::EventRate {
+                shortest_period: f32::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+                longest_period: f32::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            },
+            "differential-rate" => SamplingStrategy::DifferentialRate {
+                difference: f32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                shortest_period: f32::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+                longest_period: f32::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            },
+            _ => return Err(KatcpError::BadArgument),
+        })
     }
 }
 
@@ -220,28 +273,7 @@ impl ToKatcpArguments for SamplingRequest {
     fn to_arguments(&self) -> Vec<String> {
         let mut prelude = vec![self.names.to_argument()];
         if let Some(strat) = &self.strategy {
-            prelude.push(strat.to_argument());
-            let mut extra = match strat {
-                SamplingStrategy::Auto => vec![],
-                SamplingStrategy::None => vec![],
-                SamplingStrategy::Period { period } => vec![period.to_argument()],
-                SamplingStrategy::Event => vec![],
-                SamplingStrategy::Differential { difference } => vec![difference.to_argument()],
-                SamplingStrategy::EventRate {
-                    shortest_period,
-                    longest_period,
-                } => vec![shortest_period.to_argument(), longest_period.to_argument()],
-                SamplingStrategy::DifferentialRate {
-                    difference,
-                    shortest_period,
-                    longest_period,
-                } => vec![
-                    difference.to_argument(),
-                    shortest_period.to_argument(),
-                    longest_period.to_argument(),
-                ],
-            };
-            prelude.append(&mut extra);
+            prelude.append(&mut strat.to_arguments());
             prelude
         } else {
             prelude
@@ -254,54 +286,50 @@ impl FromKatcpArguments for SamplingRequest {
 
     fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
         let names = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
-        if let Some(s) = strings.next() {
-            let strat = String::from_argument(s)?;
-            let strategy = Some(match strat.as_str() {
-                "auto" => SamplingStrategy::Auto,
-                "none" => SamplingStrategy::None,
-                "period" => SamplingStrategy::Period {
-                    period: f32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
-                },
-                "event" => SamplingStrategy::Event,
-                "differential" => SamplingStrategy::Differential {
-                    difference: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                },
-                "event-rate" => SamplingStrategy::EventRate {
-                    shortest_period: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                    longest_period: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                },
-                "differential-rate" => SamplingStrategy::DifferentialRate {
-                    difference: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                    shortest_period: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                    longest_period: f32::from_argument(
-                        strings.next().ok_or(KatcpError::MissingArgument)?,
-                    )?,
-                },
-                _ => return Err(KatcpError::BadArgument),
-            });
-            Ok(Self { names, strategy })
-        } else {
-            Ok(Self {
+        // If the next string is empty, we don't care, but a BadArgument is a real error we want to send up
+        match SamplingStrategy::from_arguments(strings) {
+            Ok(strategy) => Ok(Self {
                 names,
-                strategy: None,
-            })
+                strategy: Some(strategy),
+            }),
+            Err(e) => match e {
+                e @ KatcpError::BadArgument => return Err(e),
+                _ => Ok(Self {
+                    names,
+                    strategy: None,
+                }),
+            },
         }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct SamplingReply {
+    names: String,
+    strategy: SamplingStrategy,
+}
+
+impl ToKatcpArguments for SamplingReply {
+    fn to_arguments(&self) -> Vec<String> {
+        let mut prelude = vec![self.names.to_argument()];
+        prelude.append(&mut self.strategy.to_arguments());
+        prelude
+    }
+}
+impl FromKatcpArguments for SamplingReply {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let names = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let strategy = SamplingStrategy::from_arguments(strings)?;
+        Ok(Self { names, strategy })
     }
 }
 
 #[derive(KatcpMessage, Debug, PartialEq)]
 pub enum SensorSampling {
     Request(SamplingRequest),
+    Reply(SamplingReply),
 }
 
 #[cfg(test)]
@@ -343,6 +371,10 @@ mod sensor_tests {
         }));
         roundtrip_test(SensorSampling::Request(SamplingRequest {
             names: "wind-speed".to_owned(),
+            strategy: Some(SamplingStrategy::None),
+        }));
+        roundtrip_test(SensorSampling::Request(SamplingRequest {
+            names: "wind-speed".to_owned(),
             strategy: None,
         }));
         roundtrip_test(SensorSampling::Request(SamplingRequest {
@@ -356,6 +388,17 @@ mod sensor_tests {
                 shortest_period: 3.1,
                 longest_period: 15.0,
             }),
+        }));
+        roundtrip_test(SensorSampling::Reply(SamplingReply {
+            names: "wind-speed".to_owned(),
+            strategy: SamplingStrategy::EventRate {
+                shortest_period: 3.14,
+                longest_period: 2.71,
+            },
+        }));
+        roundtrip_test(SensorSampling::Reply(SamplingReply {
+            names: "wind-speed".to_owned(),
+            strategy: SamplingStrategy::Differential { difference: 420.69 },
         }));
     }
 }
