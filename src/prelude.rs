@@ -4,8 +4,8 @@
 
 pub use crate::{
     messages::common::{
-        ArgumentType, FromKatcpArgument, FromKatcpArguments, KatcpArgument, KatcpMessage, RetCode,
-        ToKatcpArgument, ToKatcpArguments,
+        ArgumentType, ArgumentVec, FromKatcpArgument, FromKatcpArguments, KatcpAddress,
+        KatcpArgument, KatcpMessage, RetCode, ToKatcpArgument, ToKatcpArguments,
     },
     protocol::{KatcpError, Message, MessageKind, MessageResult},
 };

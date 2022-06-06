@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
-use super::core::IntReply;
+use super::{common::from_argument_vec, core::IntReply};
 use crate::prelude::*;
 
 /// The valid katcp "sensor" statuses
@@ -42,35 +42,46 @@ impl SensorStatus {
 }
 
 #[derive(Debug, PartialEq)]
-pub enum SensorListParams {
-    Integer(Vec<i32>),
-    Float(Vec<f32>),
-    Boolean(Vec<bool>),
-    Timestamp(Vec<DateTime<Utc>>),
-    String(Vec<String>),
-    Discrete(Vec<String>),
-}
-
-impl ToKatcpArguments for SensorListParams {
-    fn to_arguments(&self) -> Vec<String> {
-        match self {
-            SensorListParams::Integer(v) => v.iter().map(|e| e.to_argument()).collect(),
-            SensorListParams::Float(v) => v.iter().map(|e| e.to_argument()).collect(),
-            SensorListParams::Boolean(v) => v.iter().map(|e| e.to_argument()).collect(),
-            SensorListParams::Timestamp(v) => v.iter().map(|e| e.to_argument()).collect(),
-            SensorListParams::String(v) => v.iter().map(|e| e.to_argument()).collect(),
-            SensorListParams::Discrete(v) => v.iter().map(|e| e.to_argument()).collect(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
+/// The data of a [`SensorList`] inform message
 pub struct SensorListInform {
+    /// is the name of the sensor in dotted notation. This notation allows a virtual hierarchy of sensors to
+    /// be represented; e.g. a name might be rfe0.temperature.
     name: String,
+    /// is a human-readable description of the information provided by the sensor.
     description: String,
+    /// is a human-readable string containing a short form of the units for the sensor value. May be blank
+    /// if there are no suitable units. Examples: "kg", "packet count", "m/s". Should be suitable for display
+    /// next to the value in a user interface
     units: String,
-    ty: ArgumentType,
-    params: SensorListParams,
+    /// The params themselves. The meaning of the params depend on the types
+    ///
+    /// # Notes
+    /// Note that the specifying the optional error and warning ranges for integer or float sensors does
+    /// not relieve the device from setting the correct status on sensors itself; it is only meant to provide
+    /// extra information to users of a device. The device exposing the sensor must ensure that the way it
+    /// reports sensor status is consistent with the ranges reported by the #sensor-list inform. If it is not
+    /// possible to do so, the ranges should be omitted.
+    ///
+    /// Any sensor value (assuming the sensor status is not unknown, failure, unreachable or inactive) x :
+    /// nominal-min ≤ x ≤ nominal-max should be accompanied by a nominal sensor state. If only
+    /// nominal-min and nominal-max are specified, Values outside this range may be accompanied
+    /// by warning or error states. If warn-min and warn-max are also specified, values of x such that
+    /// warn-min ≤ x < nominal-min or nominal-max < x ≤ warn-max should be accompanied by a
+    /// warning status, while values outside these ranges should be be accompanied by an error status.
+    ///
+    /// # Type Information
+    /// ## Integer
+    /// `[nominal-min nominal-max [warn-min warn-max]]`
+    ///
+    /// ## Float
+    /// `[nominal-min nominal-max [warn-min warn-max]]`
+    ///
+    /// ## Discrete
+    /// list of available options
+    ///
+    /// ## Boolean, Timestamp, Address, String
+    /// No additional parameters
+    params: ArgumentVec,
 }
 
 impl ToKatcpArguments for SensorListInform {
@@ -79,8 +90,8 @@ impl ToKatcpArguments for SensorListInform {
             self.name.to_argument(),
             self.description.to_argument(),
             self.units.to_argument(),
-            self.ty.to_argument(),
         ];
+        prelude.push(self.params.to_string());
         // Why oh why does append not return the result
         prelude.append(&mut self.params.to_arguments());
         prelude
@@ -96,44 +107,11 @@ impl FromKatcpArguments for SensorListInform {
             String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
         let units = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
         let ty = ArgumentType::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
-        let params = match ty {
-            ArgumentType::Boolean => SensorListParams::Boolean(
-                strings
-                    .map(bool::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            ArgumentType::Integer => SensorListParams::Integer(
-                strings
-                    .map(i32::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            ArgumentType::Float => SensorListParams::Float(
-                strings
-                    .map(f32::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            ArgumentType::Timestamp => SensorListParams::Timestamp(
-                strings
-                    .map(DateTime::<Utc>::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            ArgumentType::Discrete => SensorListParams::Discrete(
-                strings
-                    .map(String::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-            ArgumentType::Address => todo!(),
-            ArgumentType::String => SensorListParams::String(
-                strings
-                    .map(String::from_argument)
-                    .collect::<Result<Vec<_>, _>>()?,
-            ),
-        };
+        let params = from_argument_vec(&ty, strings)?;
         Ok(Self {
             name,
             description,
             units,
-            ty,
             params,
         })
     }
@@ -155,9 +133,137 @@ pub enum SensorList {
     Reply(IntReply),
 }
 
+#[derive(Debug, PartialEq)]
+/// The sampling strategy (and associated params) for [`SensorSampling`]
+pub enum SamplingStrategy {
+    /// Report the sensor value when convenient for
+    /// the device. This should never be equivalent to
+    /// the none strategy
+    Auto,
+    /// Do not report the sensor value.
+    None,
+    /// Report the value approximately every period
+    /// seconds. The period will be specified using
+    /// the timestamp data format. May be
+    /// implementedmented for sensors of any type.
+    Period { period: f32 },
+    /// Report the value whenever it changes. May
+    /// be implemented for sensors of any type. For
+    /// float sensors the device will have to determine
+    /// how much of a shift constitutes a real
+    /// change.
+    Event,
+    /// Report the value when it changes by more than
+    /// difference from the last reported value. May
+    /// only be implemented for float and integer
+    /// sensors. The difference is formatted as a
+    /// float for float sensors and an integer for
+    /// integer sensors.
+    Differential { difference: f32 },
+    /// Report the value whenever it changes or if
+    /// more than longest-period seconds have
+    /// passed since the last reported update. However,
+    /// do not report the value until at
+    /// least shortest-period seconds have passed
+    /// since the last reported update. The behaviour
+    /// if shortest-period is greater than
+    /// longest-period is undefined.
+    EventRate {
+        shortest_period: f32,
+        longest_period: f32,
+    },
+    /// Report the value whenever it changes by
+    /// more than difference from the last reported
+    /// value or if more than longest-period seconds
+    /// have passed since the last reported update.
+    /// However, do not report the value until at
+    /// least shortest-period seconds have passed
+    /// since the last reported update. The behaviour
+    /// if shortest-period is greater than longest-period
+    /// is undefined. May only be implemented for float
+    /// and integer sensors. The difference is formatted
+    /// as a float for float sensors and an integer for integer sensors.
+    DifferentialRate {
+        difference: f32,
+        shortest_period: f32,
+        longest_period: f32,
+    },
+}
+
+impl ToKatcpArgument for SamplingStrategy {
+    fn to_argument(&self) -> String {
+        match self {
+            SamplingStrategy::Auto => "auto",
+            SamplingStrategy::None => "none",
+            SamplingStrategy::Period { .. } => "period",
+            SamplingStrategy::Event => "event",
+            SamplingStrategy::Differential { .. } => "differential",
+            SamplingStrategy::EventRate { .. } => "event-rate",
+            SamplingStrategy::DifferentialRate { .. } => "differential-rate",
+        }
+        .to_owned()
+    }
+}
+
+#[derive(Debug, PartialEq)]
+/// The type representing a sensor sampling request
+pub struct SamplingRequest {
+    names: String,
+    strategy: Option<SamplingStrategy>,
+}
+
+// FIXME
+impl ToKatcpArguments for SamplingRequest {
+    fn to_arguments(&self) -> Vec<String> {
+        let mut prelude = vec![self.names.to_argument()];
+        if let Some(strat) = &self.strategy {
+            prelude.push(strat.to_argument());
+            let mut extra = match strat {
+                SamplingStrategy::Auto => vec![],
+                SamplingStrategy::None => vec![],
+                SamplingStrategy::Period { period } => vec![period.to_argument()],
+                SamplingStrategy::Event => vec![],
+                SamplingStrategy::Differential { difference } => vec![difference.to_argument()],
+                SamplingStrategy::EventRate {
+                    shortest_period,
+                    longest_period,
+                } => vec![shortest_period.to_argument(), longest_period.to_argument()],
+                SamplingStrategy::DifferentialRate {
+                    difference,
+                    shortest_period,
+                    longest_period,
+                } => vec![
+                    difference.to_argument(),
+                    shortest_period.to_argument(),
+                    longest_period.to_argument(),
+                ],
+            };
+            prelude.append(&mut extra);
+            prelude
+        } else {
+            prelude
+        }
+    }
+}
+
+// FIXME
+impl FromKatcpArguments for SamplingRequest {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        todo!()
+    }
+}
+
+#[derive(KatcpMessage, Debug, PartialEq)]
+pub enum SensorSampling {
+    Request(SamplingRequest),
+}
+
 #[cfg(test)]
 mod sensor_tests {
     use super::*;
+    use crate::messages::common::roundtrip_test;
 
     #[test]
     fn status_validity() {
@@ -168,5 +274,20 @@ mod sensor_tests {
         assert!(!SensorStatus::Failure.is_valid());
         assert!(!SensorStatus::Unreachable.is_valid());
         assert!(!SensorStatus::Inactive.is_valid());
+    }
+
+    #[test]
+    fn test_sensor_list() {
+        roundtrip_test(SensorList::Request { name: None });
+        roundtrip_test(SensorList::Request {
+            name: Some("rfe0.temperature".to_owned()),
+        });
+        roundtrip_test(SensorList::Reply(IntReply::Ok { num: 420 }));
+        roundtrip_test(SensorList::Inform(SensorListInform {
+            name: "rfe0.temperature".to_owned(),
+            description: "The temperature of rfe0".to_owned(),
+            units: "Kelvin".to_owned(),
+            params: ArgumentVec::Float(vec![123.234, 0.2, 12., -122e05]),
+        }));
     }
 }

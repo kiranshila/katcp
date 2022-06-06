@@ -277,9 +277,8 @@ pub fn derive_katcp(tokens: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_derive(KatcpDiscrete)]
-/// This derive macro decorates an enum where all the variants have no data and implement ToKatcpArgument
-/// and FromKatcpArgument for use with the [`KatcpMessage`] macro. This will create a bidirectional mapping
-/// between the variant names and a kebab-cased string of the variant (as per the spec)
+/// This derive macro decorates an enum to implement ToKatcpArgument and FromKatcpArgument for use with the [`KatcpMessage`] macro.
+/// This will create a bidirectional mapping between the variant names and a kebab-cased string of the variant (as per the spec).
 pub fn derive_katcp_discrete(tokens: TokenStream) -> TokenStream {
     let input = parse_macro_input!(tokens as DeriveInput);
     let enum_name = input.ident;

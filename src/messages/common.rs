@@ -1,4 +1,7 @@
-use std::net::{IpAddr, SocketAddr};
+use std::{
+    net::{IpAddr, SocketAddr},
+    str::FromStr,
+};
 
 use chrono::{DateTime, TimeZone, Utc};
 use katcp_derive::KatcpDiscrete;
@@ -124,7 +127,7 @@ where
 
 // Return Code
 #[derive(KatcpDiscrete, Debug, PartialEq, Eq, Copy, Clone)]
-/// Return codes that form the first parameter of [`KatcpKind::Reply`]
+/// Return codes that form the first parameter of replys
 pub enum RetCode {
     /// Request successfully processed. Further arguments are request-specific
     Ok,
@@ -273,6 +276,90 @@ pub enum ArgumentType {
     String,
 }
 
+#[derive(Debug, PartialEq)]
+/// The sum type of a vector of one of the primitive [`ArgumentType`]s
+pub enum ArgumentVec {
+    Integer(Vec<i32>),
+    Float(Vec<f32>),
+    Boolean(Vec<bool>),
+    Timestamp(Vec<DateTime<Utc>>),
+    String(Vec<String>),
+    Discrete(Vec<String>),
+    Address(Vec<KatcpAddress>),
+}
+
+impl ArgumentVec {
+    pub fn to_string(&self) -> String {
+        match self {
+            ArgumentVec::Integer(_) => "integer",
+            ArgumentVec::Float(_) => "float",
+            ArgumentVec::Boolean(_) => "boolean",
+            ArgumentVec::Timestamp(_) => "timestamp",
+            ArgumentVec::String(_) => "string",
+            ArgumentVec::Discrete(_) => "discrete",
+            ArgumentVec::Address(_) => "address",
+        }
+        .to_owned()
+    }
+}
+
+impl ToKatcpArguments for ArgumentVec {
+    fn to_arguments(&self) -> Vec<String> {
+        match self {
+            Self::Integer(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::Float(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::Boolean(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::Timestamp(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::String(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::Discrete(v) => v.iter().map(|e| e.to_argument()).collect(),
+            Self::Address(v) => v.iter().map(|e| e.to_argument()).collect(),
+        }
+    }
+}
+
+pub fn from_argument_vec(
+    ty: &ArgumentType,
+    strings: &mut impl Iterator<Item = String>,
+) -> Result<ArgumentVec, KatcpError> {
+    Ok(match ty {
+        ArgumentType::Boolean => ArgumentVec::Boolean(
+            strings
+                .map(bool::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::Integer => ArgumentVec::Integer(
+            strings
+                .map(i32::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::Float => ArgumentVec::Float(
+            strings
+                .map(f32::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::Timestamp => ArgumentVec::Timestamp(
+            strings
+                .map(DateTime::<Utc>::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::Discrete => ArgumentVec::Discrete(
+            strings
+                .map(String::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::Address => ArgumentVec::Address(
+            strings
+                .map(KatcpAddress::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+        ArgumentType::String => ArgumentVec::String(
+            strings
+                .map(String::from_argument)
+                .collect::<Result<Vec<_>, _>>()?,
+        ),
+    })
+}
+
 #[cfg(test)]
 mod test_arguments {
     use super::*;
@@ -324,8 +411,10 @@ mod test_arguments {
     fn test_float() {
         let a = -1.234e-05;
         let b = 1.7;
+        let c = 100.0;
         assert_eq!(a, f32::from_argument(a.to_argument()).unwrap());
         assert_eq!(b, f32::from_argument(b.to_argument()).unwrap());
+        assert_eq!(c, f32::from_argument(c.to_argument()).unwrap());
     }
 
     #[test]

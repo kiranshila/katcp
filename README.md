@@ -18,9 +18,7 @@ From the official specification:
 > Inform messages are of two types: those sent synchronously as part of a reply and those sent asynchronously.
 
 The details of orchestrating a client or server for this protocol is not the goal of this crate. Rather, this crate
-only provides the core `protocol::Message` type and the required message formats. It is up to the user of this crate how to design
-a client or server. This is to allow this library to be small and portable and not to have to make any assumptions about
-the eventual implementation.
+only provides the core `protocol::Message` type and the core message formats. It is up to the user of this crate to implement a client or server. This is to allow this library to be small and portable and not to have to make any assumptions about the eventual implementation.
 
 ### License
 
