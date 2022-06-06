@@ -45,6 +45,7 @@ pub enum KatcpError {
     BadArgument,
     MissingArgument,
     IncorrectType,
+    Message(String),
     Unknown,
 }
 

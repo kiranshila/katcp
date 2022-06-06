@@ -7,13 +7,9 @@
 //!     .try_into()
 //!     .unwrap();
 //! ```
-use chrono::{DateTime, Utc};
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
-use crate::{
-    messages::common::{FromKatcpArgument, KatcpMessage, RetCode, ToKatcpArgument},
-    protocol::{KatcpError, Message, MessageKind, MessageResult},
-};
+use crate::prelude::*;
 
 #[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
@@ -77,7 +73,7 @@ pub enum LogLevel {
 pub enum Log {
     Inform {
         level: LogLevel,
-        timestamp: DateTime<Utc>,
+        timestamp: KatcpTimestamp,
         name: String,
         message: String,
     },
@@ -94,7 +90,7 @@ impl Log {
     /// Constructs a new [`Log`] inform message
     pub fn inform<T: AsRef<str>, U: AsRef<str>>(
         level: LogLevel,
-        timestamp: DateTime<Utc>,
+        timestamp: KatcpTimestamp,
         name: T,
         message: U,
     ) -> Self {
@@ -119,7 +115,7 @@ impl Log {
 
 #[cfg(test)]
 mod tests {
-    use chrono::TimeZone;
+    use chrono::{TimeZone, Utc};
 
     use super::*;
     use crate::messages::common::roundtrip_test;

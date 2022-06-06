@@ -54,6 +54,9 @@ pub trait KatcpArguments: ToKatcpArguments + FromKatcpArguments {}
 impl<T> KatcpArgument for T where T: ToKatcpArgument + FromKatcpArgument {}
 impl<T> KatcpArguments for T where T: ToKatcpArguments + FromKatcpArguments {}
 
+/// Type alias for DateTime<Utc> from chrono
+pub type KatcpTimestamp = DateTime<Utc>;
+
 // ---- Implementations for the "core" KatcpTypes
 
 // str
@@ -77,8 +80,8 @@ impl FromKatcpArgument for String {
     }
 }
 
-// DateTime<Utc>
-impl ToKatcpArgument for DateTime<Utc> {
+// KatcpTimestamp
+impl ToKatcpArgument for KatcpTimestamp {
     fn to_argument(&self) -> String {
         let secs = self.timestamp() as f64;
         let nano = self.timestamp_subsec_nanos();
@@ -87,7 +90,7 @@ impl ToKatcpArgument for DateTime<Utc> {
     }
 }
 
-impl FromKatcpArgument for DateTime<Utc> {
+impl FromKatcpArgument for KatcpTimestamp {
     type Err = KatcpError;
 
     fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
@@ -266,7 +269,7 @@ pub enum ArgumentType {
     /// Represented by f32
     Float,
     Boolean,
-    /// Represented by chrono::DateTime<Utc>
+    /// Represented by [`KatcpTimestamp`]
     Timestamp,
     /// Represented by an enum
     Discrete,
@@ -282,7 +285,7 @@ pub enum ArgumentVec {
     Integer(Vec<i32>),
     Float(Vec<f32>),
     Boolean(Vec<bool>),
-    Timestamp(Vec<DateTime<Utc>>),
+    Timestamp(Vec<KatcpTimestamp>),
     String(Vec<String>),
     Discrete(Vec<String>),
     Address(Vec<KatcpAddress>),
@@ -341,7 +344,7 @@ pub fn from_argument_vec(
         ),
         ArgumentType::Timestamp => ArgumentVec::Timestamp(
             strings
-                .map(DateTime::<Utc>::from_argument)
+                .map(KatcpTimestamp::from_argument)
                 .collect::<Result<Vec<_>, _>>()?,
         ),
         ArgumentType::Discrete => ArgumentVec::Discrete(
@@ -375,10 +378,7 @@ mod test_arguments {
     #[test]
     fn test_timestamp() {
         let ts = Utc.timestamp(42069, 42069000);
-        assert_eq!(
-            ts,
-            DateTime::<Utc>::from_argument(ts.to_argument()).unwrap()
-        );
+        assert_eq!(ts, KatcpTimestamp::from_argument(ts.to_argument()).unwrap());
     }
 
     #[test]

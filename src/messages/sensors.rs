@@ -3,8 +3,77 @@ use katcp_derive::{KatcpDiscrete, KatcpMessage};
 use super::{common::from_argument_vec, core::IntReply};
 use crate::prelude::*;
 
-/// The valid katcp "sensor" statuses
-#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+/// The core `sensor` type.
+/// The value of a sensor is generic to anything that is a valid KatcpArgument
+#[derive(Debug, PartialEq, Eq)]
+pub struct Sensor<T>
+where
+    T: KatcpArgument + Clone,
+{
+    name: String,
+    status: SensorStatus,
+    timestamp: KatcpTimestamp,
+    value: T,
+}
+
+impl<T> Sensor<T>
+where
+    T: KatcpArgument<Err = KatcpError> + Clone,
+{
+    /// Constructor for a new sensor
+    pub fn new(name: String, status: SensorStatus, timestamp: KatcpTimestamp, value: T) -> Self {
+        Self {
+            name,
+            status,
+            timestamp,
+            value,
+        }
+    }
+
+    /// Fetches the last value of the sensor
+    pub fn value(&self) -> T {
+        self.value.clone()
+    }
+
+    /// Fetches the last status of the sensor
+    pub fn status(&self) -> SensorStatus {
+        self.status
+    }
+
+    /// Fetches when the sensor was last updated
+    pub fn last_updated(&self) -> KatcpTimestamp {
+        self.timestamp
+    }
+
+    /// Update the sensor, requiring the updates status, timestamp, and value
+    pub fn update(&mut self, status: &SensorStatus, timestamp: &KatcpTimestamp, value: &T) {
+        self.status = *status;
+        self.timestamp = *timestamp;
+        self.value = value.clone();
+    }
+
+    pub fn update_from_reading(
+        &mut self,
+        timestamp: &KatcpTimestamp,
+        reading: &SensorReading,
+    ) -> Result<(), KatcpError> {
+        if self.name != reading.name {
+            return Err(KatcpError::Message(format!(
+                "Tried to update sensor with name:{} with a reading of name:{}",
+                self.name, reading.name
+            )));
+        }
+        self.update(
+            &reading.status,
+            timestamp,
+            &(T::from_argument(&reading.value)?),
+        );
+        Ok(())
+    }
+}
+
+/// The katcp sensor statuses
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq, Clone, Copy)]
 pub enum SensorStatus {
     /// The sensor is in the process of being initialized and no value has yet been
     /// seen. Sensors should not remain in this state indefinitely.
@@ -31,7 +100,7 @@ pub enum SensorStatus {
 }
 
 impl SensorStatus {
-    /// Returns if a given `SensorStatus` is valid
+    /// Returns if a given `SensorStatus` is valid according to the spec
     pub fn is_valid(self) -> bool {
         matches!(
             self,
@@ -41,7 +110,8 @@ impl SensorStatus {
 }
 
 #[derive(Debug, PartialEq)]
-/// The data of a [`SensorList`] inform message
+/// The data of a [`SensorList`] inform message.
+/// You would use this information to design a [`Sensor`] type
 pub struct SensorListInform {
     /// is the name of the sensor in dotted notation. This notation allows a virtual hierarchy of sensors to
     /// be represented; e.g. a name might be rfe0.temperature.
@@ -58,7 +128,7 @@ pub struct SensorListInform {
     /// Note that the specifying the optional error and warning ranges for integer or float sensors does
     /// not relieve the device from setting the correct status on sensors itself; it is only meant to provide
     /// extra information to users of a device. The device exposing the sensor must ensure that the way it
-    /// reports sensor status is consistent with the ranges reported by the #sensor-list inform. If it is not
+    /// reports sensor status is consistent with the ranges reported by the [`SensorList`] inform. If it is not
     /// possible to do so, the ranges should be omitted.
     ///
     /// Any sensor value (assuming the sensor status is not unknown, failure, unreachable or inactive) x :
@@ -142,9 +212,8 @@ pub enum SamplingStrategy {
     /// Do not report the sensor value.
     None,
     /// Report the value approximately every period
-    /// seconds. The period will be specified using
-    /// the timestamp data format. May be
-    /// implementedmented for sensors of any type.
+    /// seconds. The period will be specified using seconds as an f32.
+    /// May be implementedmented for sensors of any type.
     Period { period: f32 },
     /// Report the value whenever it changes. May
     /// be implemented for sensors of any type. For
@@ -293,7 +362,7 @@ impl FromKatcpArguments for SamplingRequest {
                 strategy: Some(strategy),
             }),
             Err(e) => match e {
-                e @ KatcpError::BadArgument => return Err(e),
+                e @ KatcpError::BadArgument => Err(e),
                 _ => Ok(Self {
                     names,
                     strategy: None,
@@ -332,10 +401,121 @@ pub enum SensorSampling {
     Reply(SamplingReply),
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct SensorReading {
+    name: String,
+    status: SensorStatus,
+    /// A bare sensor reading will be kept as a string as it's type
+    /// is dependent on the value of `name`
+    value: String,
+}
+
+impl FromKatcpArguments for SensorReading {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let name = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let status =
+            SensorStatus::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let value = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        Ok(Self {
+            name,
+            status,
+            value,
+        })
+    }
+}
+
+impl ToKatcpArguments for SensorReading {
+    fn to_arguments(&self) -> Vec<String> {
+        vec![
+            self.name.to_argument(),
+            self.status.to_argument(),
+            self.value.to_argument(),
+        ]
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct SensorUpdates {
+    timestamp: KatcpTimestamp,
+    readings: Vec<SensorReading>,
+}
+
+impl FromKatcpArguments for SensorUpdates {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let timestamp =
+            KatcpTimestamp::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let num_sensors = u32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        let mut readings = vec![];
+        for _ in 1..=num_sensors {
+            readings.push(SensorReading::from_arguments(strings)?);
+        }
+        Ok(Self {
+            timestamp,
+            readings,
+        })
+    }
+}
+
+impl ToKatcpArguments for SensorUpdates {
+    fn to_arguments(&self) -> Vec<String> {
+        let mut prelude = vec![
+            self.timestamp.to_argument(),
+            (self.readings.len() as u32).to_argument(),
+        ];
+        prelude.append(
+            &mut self
+                .readings
+                .iter()
+                .flat_map(|r| r.to_arguments())
+                .collect(),
+        );
+        prelude
+    }
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+pub enum SensorValue {
+    /// Before sending a reply, the sensor-value request will send a number of sensor-value inform messages. If
+    /// no name parameter is sent the sensor-value request will return a sensor value for each sensor available on
+    /// the device using a set of sensor-value inform messages. If a name parameter is specified, only an inform
+    /// message for that sensor will be sent. On success the first reply parameter after the status code will contain
+    /// the number of inform messages generated by this request. If the name parameter does not correspond to
+    /// a sensor on the device, a fail reply should be sent.
+    Request {
+        name: Option<String>,
+    },
+    Reply(IntReply),
+    /// The sensor-value inform message has the same structure as the asynchronous [`sensor-status`] inform except
+    /// for the message name. The message name is used to determine whether the sensor value is being reported
+    /// in response to a sensor-value request or as a result of sensor sampling.
+    Inform(SensorUpdates),
+}
+
 #[cfg(test)]
 mod sensor_tests {
+    use chrono::{TimeZone, Utc};
+
     use super::*;
     use crate::messages::common::roundtrip_test;
+
+    #[test]
+    fn test_sensor() {
+        let mut pump_pressure = Sensor::new(
+            "pump.pressure".to_owned(),
+            SensorStatus::Nominal,
+            Utc::now(),
+            3.15,
+        );
+        assert_eq!(pump_pressure.value(), 3.15);
+        pump_pressure.update(&SensorStatus::Warn, &Utc::now(), &90000.0);
+        assert_eq!(pump_pressure.status(), SensorStatus::Warn);
+        assert_eq!(pump_pressure.value(), 90000.0);
+        assert!(pump_pressure.status().is_valid());
+    }
 
     #[test]
     fn status_validity() {
@@ -392,7 +572,7 @@ mod sensor_tests {
         roundtrip_test(SensorSampling::Reply(SamplingReply {
             names: "wind-speed".to_owned(),
             strategy: SamplingStrategy::EventRate {
-                shortest_period: 3.14,
+                shortest_period: 3.15,
                 longest_period: 2.71,
             },
         }));
@@ -400,5 +580,65 @@ mod sensor_tests {
             names: "wind-speed".to_owned(),
             strategy: SamplingStrategy::Differential { difference: 420.69 },
         }));
+    }
+
+    #[test]
+    fn test_sensor_value() {
+        roundtrip_test(SensorValue::Request { name: None });
+        roundtrip_test(SensorValue::Request {
+            name: Some("antennas.1.pitch".to_owned()),
+        });
+        roundtrip_test(SensorValue::Reply(IntReply::Ok { num: 10 }));
+        roundtrip_test(SensorValue::Reply(IntReply::Error {
+            ret_code: RetCode::Invalid,
+            message: "Uh oh".to_owned(),
+        }));
+        roundtrip_test(SensorValue::Inform(SensorUpdates {
+            timestamp: Utc.timestamp(1654553033, 0),
+            readings: vec![
+                SensorReading {
+                    name: "big-fat-motor.current".to_owned(),
+                    status: SensorStatus::Nominal,
+                    value: "0.813".to_owned(),
+                },
+                SensorReading {
+                    name: "big-fat-motor.voltage".to_owned(),
+                    status: SensorStatus::Nominal,
+                    value: "24.1".to_owned(),
+                },
+            ],
+        }));
+    }
+
+    #[test]
+    fn test_updating_sensor_values() {
+        let mut pump_pressure = Sensor::new(
+            "pump.pressure".to_owned(),
+            SensorStatus::Nominal,
+            Utc::now(),
+            3.15,
+        );
+        let new_time = Utc::now();
+        let incoming_message: SensorValue = format!(
+            "#sensor-value {} 1 pump.pressure warn 8.73",
+            new_time.to_argument()
+        )
+        .as_str()
+        .try_into()
+        .unwrap();
+        if let SensorValue::Inform(SensorUpdates {
+            timestamp,
+            readings,
+        }) = incoming_message
+        {
+            // This knows to serialize the reading into an f32 because of the type of the sensor
+            pump_pressure
+                .update_from_reading(&timestamp, readings.first().unwrap())
+                .unwrap();
+            assert_eq!(pump_pressure.value(), 8.73);
+            assert_eq!(pump_pressure.status(), SensorStatus::Warn);
+        } else {
+            panic!()
+        }
     }
 }
