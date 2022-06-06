@@ -1,4 +1,3 @@
-use chrono::{DateTime, Utc};
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
 use super::{common::from_argument_vec, core::IntReply};
@@ -250,7 +249,7 @@ impl ToKatcpArguments for SamplingRequest {
 impl FromKatcpArguments for SamplingRequest {
     type Err = KatcpError;
 
-    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+    fn from_arguments(_strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
         todo!()
     }
 }

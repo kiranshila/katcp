@@ -1,6 +1,6 @@
 use std::{
+    fmt::Display,
     net::{IpAddr, SocketAddr},
-    str::FromStr,
 };
 
 use chrono::{DateTime, TimeZone, Utc};
@@ -288,9 +288,9 @@ pub enum ArgumentVec {
     Address(Vec<KatcpAddress>),
 }
 
-impl ArgumentVec {
-    pub fn to_string(&self) -> String {
-        match self {
+impl Display for ArgumentVec {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
             ArgumentVec::Integer(_) => "integer",
             ArgumentVec::Float(_) => "float",
             ArgumentVec::Boolean(_) => "boolean",
@@ -299,7 +299,9 @@ impl ArgumentVec {
             ArgumentVec::Discrete(_) => "discrete",
             ArgumentVec::Address(_) => "address",
         }
-        .to_owned()
+        .to_owned();
+
+        write! {f,"{}",s}
     }
 }
 
