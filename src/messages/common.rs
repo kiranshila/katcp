@@ -1,3 +1,5 @@
+use std::net::{IpAddr, SocketAddr};
+
 use chrono::{DateTime, TimeZone, Utc};
 use katcp_derive::KatcpDiscrete;
 
@@ -178,7 +180,65 @@ impl FromKatcpArgument for bool {
     }
 }
 
-// TODO float, address
+impl ToKatcpArgument for f32 {
+    fn to_argument(&self) -> String {
+        format!("{}", self)
+    }
+}
+
+impl FromKatcpArgument for f32 {
+    type Err = KatcpError;
+
+    fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
+        s.as_ref().parse().map_err(|_| KatcpError::BadArgument)
+    }
+}
+
+/// Katcp addresses optionally have a port, so we need a sum type for the two native rust
+/// types [`IpAddr`] and [`SocketAddr`], depending on whether we have a port
+#[derive(Debug, PartialEq, Eq)]
+pub enum KatcpAddress {
+    Ip(IpAddr),
+    Socket(SocketAddr),
+}
+
+impl ToKatcpArgument for KatcpAddress {
+    fn to_argument(&self) -> String {
+        match self {
+            KatcpAddress::Ip(addr) => match addr {
+                IpAddr::V4(addr) => addr.to_string(),
+                IpAddr::V6(addr) => format!("[{}]", addr),
+            },
+            KatcpAddress::Socket(addr) => match addr {
+                SocketAddr::V4(addr) => addr.to_string(),
+                SocketAddr::V6(addr) => addr.to_string(),
+            },
+        }
+    }
+}
+
+impl FromKatcpArgument for KatcpAddress {
+    type Err = KatcpError;
+
+    fn from_argument(s: impl AsRef<str>) -> Result<Self, Self::Err> {
+        if s.as_ref().is_empty() {
+            Err(KatcpError::BadArgument)
+        } else if let Ok(addr) = s.as_ref().parse() {
+            Ok(Self::Socket(addr))
+        } else if let Ok(addr) = s.as_ref().parse() {
+            Ok(Self::Ip(addr))
+        } else if s.as_ref().starts_with('[') && s.as_ref().ends_with(']') {
+            let slice = &s.as_ref()[1..s.as_ref().len() - 1];
+            if let Ok(addr) = slice.parse() {
+                Ok(Self::Ip(addr))
+            } else {
+                Err(KatcpError::BadArgument)
+            }
+        } else {
+            Err(KatcpError::BadArgument)
+        }
+    }
+}
 
 /// Convienence method for round-trip testing
 pub fn roundtrip_test<T, E>(message: T)
@@ -193,6 +253,24 @@ where
     let raw_test: Message = (s.as_str()).try_into().unwrap();
     let message_test = raw_test.try_into().unwrap();
     assert_eq!(message, message_test)
+}
+
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+/// The datatypes that KATCP supports
+pub enum ArgumentType {
+    /// Represented by i32
+    Integer,
+    /// Represented by f32
+    Float,
+    Boolean,
+    /// Represented by chrono::DateTime<Utc>
+    Timestamp,
+    /// Represented by an enum
+    Discrete,
+    /// Represented by KatcpAddress
+    Address,
+    /// Will always be escaped and unescaped during serde
+    String,
 }
 
 #[cfg(test)]
@@ -240,5 +318,41 @@ mod test_arguments {
         let b = false;
         assert_eq!(a, bool::from_argument(a.to_argument()).unwrap());
         assert_eq!(b, bool::from_argument(b.to_argument()).unwrap());
+    }
+
+    #[test]
+    fn test_float() {
+        let a = -1.234e-05;
+        let b = 1.7;
+        assert_eq!(a, f32::from_argument(a.to_argument()).unwrap());
+        assert_eq!(b, f32::from_argument(b.to_argument()).unwrap());
+    }
+
+    #[test]
+    fn test_addr() {
+        let v4_socket = "192.168.1.1:4000";
+        let v4_ip = "127.0.0.1";
+        let v6_socket = "[2001:db8:85a3::8a2e:370:7334]:4000";
+        let v6_ip = "[::1]";
+        assert_eq!(
+            v4_socket,
+            KatcpAddress::from_argument(v4_socket)
+                .unwrap()
+                .to_argument()
+        );
+        assert_eq!(
+            v6_socket,
+            KatcpAddress::from_argument(v6_socket)
+                .unwrap()
+                .to_argument()
+        );
+        assert_eq!(
+            v4_ip,
+            KatcpAddress::from_argument(v4_ip).unwrap().to_argument()
+        );
+        assert_eq!(
+            v6_ip,
+            KatcpAddress::from_argument(v6_ip).unwrap().to_argument()
+        );
     }
 }
