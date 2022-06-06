@@ -207,11 +207,15 @@ impl ToKatcpArgument for SamplingStrategy {
 #[derive(Debug, PartialEq)]
 /// The type representing a sensor sampling request
 pub struct SamplingRequest {
+    /// is the name of a single sensor. For bulk setting a comma-separated list of many sensor names can be used if the server supports the `B` flag
     names: String,
+    /// pecifies a sampling strategy and is one of the strategies described in [`SamplingStrategy`]
+    /// If no strategy is
+    /// specified, the current strategy and parameters are left unchanged and just reported in the reply. This
+    /// querying of a strategy is only applicable when specifying a single sensor name, not a list of names.
     strategy: Option<SamplingStrategy>,
 }
 
-// FIXME
 impl ToKatcpArguments for SamplingRequest {
     fn to_arguments(&self) -> Vec<String> {
         let mut prelude = vec![self.names.to_argument()];
@@ -245,12 +249,53 @@ impl ToKatcpArguments for SamplingRequest {
     }
 }
 
-// FIXME
 impl FromKatcpArguments for SamplingRequest {
     type Err = KatcpError;
 
-    fn from_arguments(_strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
-        todo!()
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let names = String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?;
+        if let Some(s) = strings.next() {
+            let strat = String::from_argument(s)?;
+            let strategy = Some(match strat.as_str() {
+                "auto" => SamplingStrategy::Auto,
+                "none" => SamplingStrategy::None,
+                "period" => SamplingStrategy::Period {
+                    period: f32::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                },
+                "event" => SamplingStrategy::Event,
+                "differential" => SamplingStrategy::Differential {
+                    difference: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                },
+                "event-rate" => SamplingStrategy::EventRate {
+                    shortest_period: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                    longest_period: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                },
+                "differential-rate" => SamplingStrategy::DifferentialRate {
+                    difference: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                    shortest_period: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                    longest_period: f32::from_argument(
+                        strings.next().ok_or(KatcpError::MissingArgument)?,
+                    )?,
+                },
+                _ => return Err(KatcpError::BadArgument),
+            });
+            Ok(Self { names, strategy })
+        } else {
+            Ok(Self {
+                names,
+                strategy: None,
+            })
+        }
     }
 }
 
@@ -287,6 +332,30 @@ mod sensor_tests {
             description: "The temperature of rfe0".to_owned(),
             units: "Kelvin".to_owned(),
             params: ArgumentVec::Float(vec![123.234, 0.2, 12., -122e05]),
+        }));
+    }
+
+    #[test]
+    fn test_sensor_sampling() {
+        roundtrip_test(SensorSampling::Request(SamplingRequest {
+            names: "wind-speed".to_owned(),
+            strategy: Some(SamplingStrategy::Auto),
+        }));
+        roundtrip_test(SensorSampling::Request(SamplingRequest {
+            names: "wind-speed".to_owned(),
+            strategy: None,
+        }));
+        roundtrip_test(SensorSampling::Request(SamplingRequest {
+            names: "wind-speed".to_owned(),
+            strategy: Some(SamplingStrategy::Period { period: 1.0 }),
+        }));
+        roundtrip_test(SensorSampling::Request(SamplingRequest {
+            names: "wind-speed".to_owned(),
+            strategy: Some(SamplingStrategy::DifferentialRate {
+                difference: 10.5,
+                shortest_period: 3.1,
+                longest_period: 15.0,
+            }),
         }));
     }
 }
