@@ -1,6 +1,6 @@
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
-use super::{common::from_argument_vec, core::IntReply};
+use super::common::from_argument_vec;
 use crate::prelude::*;
 
 /// The core `sensor` type.
