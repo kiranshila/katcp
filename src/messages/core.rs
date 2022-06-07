@@ -1,5 +1,7 @@
 //! Messages dealing with connecting to a device, halting it or restarting it and querying basic information
 
+use std::{collections::HashSet, fmt::Display};
+
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 use rustc_version;
 
@@ -158,12 +160,179 @@ pub enum Disconnect {
     Inform { message: String },
 }
 
-#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Hash)]
+/// Flags from [VersionConnect] that indicate the device's features
+pub enum ProtocolFlags {
+    /// the server supports multiple clients. Absence of this flag indicates that only a single client is supported
+    MultiClient,
+    /// the server supports message identifiers
+    MessageIds,
+    /// the server provides request timeout hints
+    TimeoutHints,
+    /// the server supports setting sensor sampling in bulk
+    BulkSampling,
+}
+
+impl Display for ProtocolFlags {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", match self {
+            ProtocolFlags::MultiClient => "M",
+            ProtocolFlags::MessageIds => "I",
+            ProtocolFlags::TimeoutHints => "T",
+            ProtocolFlags::BulkSampling => "B",
+        })
+    }
+}
+
+impl TryFrom<String> for ProtocolFlags {
+    type Error = KatcpError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "M" => Ok(Self::MultiClient),
+            "I" => Ok(Self::MessageIds),
+            "T" => Ok(Self::TimeoutHints),
+            "B" => Ok(Self::BulkSampling),
+            _ => Err(KatcpError::BadArgument),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 /// The three different types of [`VersionConnect`] inform messages
-pub enum VersionConnectName {
-    KatcpProtocol,
-    KatcpLibrary,
-    KatcpDevice,
+pub enum VersionConnectInform {
+    /// The version of katcp and the options it supports
+    KatcpProtocol {
+        major: u32,
+        minor: u32,
+        flags: HashSet<ProtocolFlags>,
+    },
+    /// Specifies the specific katcp library that the device is using
+    KatcpLibrary {
+        version: String,
+        build_state: String,
+    },
+    /// Specifies API version and build state
+    KatcpDevice {
+        api_version: String,
+        device: KatcpAddress,
+        build_state: String,
+    },
+    /// Fallback for the other custom messages
+    Custom {
+        name: String,
+        version: String,
+        info: Option<String>,
+    },
+}
+
+impl ToKatcpArguments for VersionConnectInform {
+    fn to_arguments(&self) -> Vec<String> {
+        match self {
+            VersionConnectInform::KatcpProtocol {
+                major,
+                minor,
+                flags,
+            } => {
+                let flags = flags
+                    .iter()
+                    .map(|f| f.to_string())
+                    .reduce(|current, next| current + &next);
+                let flag_str = flags.map_or("".to_owned(), |s| format!("-{}", s));
+                vec![
+                    "katcp-protocol".to_owned(),
+                    format!("{}.{}{}", major, minor, flag_str),
+                ]
+            }
+            VersionConnectInform::KatcpLibrary {
+                version,
+                build_state,
+            } => vec![
+                "katcp-library".to_owned(),
+                version.to_argument(),
+                build_state.to_argument(),
+            ],
+            VersionConnectInform::KatcpDevice {
+                api_version,
+                device,
+                build_state,
+            } => vec![
+                "katcp-device".to_owned(),
+                api_version.to_argument(),
+                device.to_argument(),
+                build_state.to_argument(),
+            ],
+            VersionConnectInform::Custom {
+                name,
+                version,
+                info,
+            } => {
+                let mut prelude = vec![name.to_argument(), version.to_argument()];
+                if let Some(s) = info {
+                    prelude.push(s.to_argument());
+                }
+                prelude
+            }
+        }
+    }
+}
+
+impl FromKatcpArguments for VersionConnectInform {
+    type Err = KatcpError;
+
+    fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err> {
+        let inform_type = strings.next().ok_or(KatcpError::MissingArgument)?;
+        match inform_type.as_str() {
+            "katcp-protocol" => {
+                let version_str = strings.next().ok_or(KatcpError::MissingArgument)?;
+                let (major, minor_and_flags) =
+                    version_str.split_once('.').ok_or(KatcpError::BadArgument)?;
+                let major = major.parse().map_err(|_| KatcpError::BadArgument)?;
+                let split = minor_and_flags.split_once('-');
+                let (minor, flags) = if let Some((minor, flagset)) = split {
+                    let flags = flagset
+                        .chars()
+                        .map(|c| c.to_string().try_into())
+                        .collect::<Result<HashSet<_>, _>>()?;
+                    (minor.parse().map_err(|_| KatcpError::BadArgument)?, flags)
+                } else {
+                    (
+                        minor_and_flags // if let didn't match, so minor_and_flags is only minor
+                            .parse()
+                            .map_err(|_| KatcpError::BadArgument)?,
+                        HashSet::new(),
+                    )
+                };
+                Ok(Self::KatcpProtocol {
+                    major,
+                    minor,
+                    flags,
+                })
+            }
+            "katcp-library" => Ok(Self::KatcpLibrary {
+                version: String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                build_state: String::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            }),
+            "katcp-device" => Ok(Self::KatcpDevice {
+                api_version: String::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+                device: KatcpAddress::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+                build_state: String::from_argument(
+                    strings.next().ok_or(KatcpError::MissingArgument)?,
+                )?,
+            }),
+            _ => Ok(Self::Custom {
+                name: inform_type,
+                version: String::from_argument(strings.next().ok_or(KatcpError::MissingArgument)?)?,
+                info: strings.next().map(String::from_argument).transpose()?,
+            }),
+        }
+    }
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
@@ -171,11 +340,7 @@ pub enum VersionConnectName {
 /// and all roles and components declared via [`VersionConnect`] should be included in the informs sent in
 /// response to [`VersionList`].
 pub enum VersionConnect {
-    Inform {
-        name: VersionConnectName,
-        version: String,
-        build_or_serial: String,
-    },
+    Inform(VersionConnectInform),
 }
 
 impl VersionConnect {
@@ -183,11 +348,10 @@ impl VersionConnect {
     pub fn library() -> Self {
         let version = env!("CARGO_PKG_VERSION");
         let target = rustc_version::version().unwrap();
-        Self::Inform {
-            name: VersionConnectName::KatcpLibrary,
+        Self::Inform(VersionConnectInform::KatcpLibrary {
             version: format!("katcp-{}", version),
-            build_or_serial: format!("rustc-{}", target),
-        }
+            build_state: format!("rustc-{}", target),
+        })
     }
 }
 
@@ -312,7 +476,7 @@ mod tests {
 
     #[test]
     fn test_version_list() {
-        roundtrip_test(VersionList::Request {});
+        roundtrip_test(VersionList::Request);
         roundtrip_test(VersionList::Inform {
             name: "my-special-device".to_owned(),
             version: "0.1.2.3rev10".to_owned(),
@@ -335,6 +499,25 @@ mod tests {
     #[test]
     fn test_version_connect() {
         roundtrip_test(VersionConnect::library());
+        roundtrip_test(VersionConnect::Inform(
+            VersionConnectInform::KatcpProtocol {
+                major: 5,
+                minor: 1,
+                flags: HashSet::from([ProtocolFlags::MultiClient, ProtocolFlags::BulkSampling]),
+            },
+        ));
+        roundtrip_test(VersionConnect::Inform(
+            VersionConnectInform::KatcpProtocol {
+                major: 5,
+                minor: 0,
+                flags: HashSet::new(),
+            },
+        ));
+        roundtrip_test(VersionConnect::Inform(VersionConnectInform::Custom {
+            name: "kernel".to_owned(),
+            version: "4.4.9-v7+".to_owned(),
+            info: Some("#884 SMP Fri May 6 17:28:59 BST 2016".to_owned()),
+        }));
     }
 
     #[test]
