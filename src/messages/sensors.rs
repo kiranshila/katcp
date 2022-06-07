@@ -39,8 +39,7 @@
 
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
-use super::common::from_argument_vec;
-use crate::prelude::*;
+use crate::{messages::common::from_argument_vec, prelude::*};
 
 /// The core sensor type
 ///
@@ -446,7 +445,7 @@ pub enum SensorSampling {
 pub struct SensorReading {
     pub name: String,
     pub status: Status,
-    /// A bare sensor reading will be kept as a string as it's type
+    /// A bare sensor reading will be kept as a string as its type
     /// is dependent on the value of `name`
     pub value: String,
 }
