@@ -6,8 +6,10 @@ edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Proc macros to accompany the katcp packages"
 homepage = "https://github.com/GReX-Telescope/katcp"
-respository = "https://github.com/GReX-Telescope/katcp"
+repository = "https://github.com/GReX-Telescope/katcp"
 readme = "../README.md"
+keywords = ["astronomy", "protocol", "telescope"]
+categories = ["encoding","parser-implementations"]
 
 [lib]
 proc_macro = true
