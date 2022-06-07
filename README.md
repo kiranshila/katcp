@@ -1,6 +1,7 @@
 # katcp
 
 [![license](https://img.shields.io/badge/license-Apache--2.0_OR_MIT-blue?style=flat-square)](#license)
+[![docs](https://img.shields.io/docsrs/katcp?logo=rust&style=flat-square)](https://docs.rs/katcp/latest/katcp/index.html)
 [![rustc](https://img.shields.io/badge/rustc-1.59+-blue?style=flat-square&logo=rust)](https://www.rust-lang.org)
 [![build status](https://img.shields.io/github/workflow/status/GReX-Telescope/katcp/CI/main?style=flat-square&logo=github)](https://github.com/GReX-Telescope/katcp/actions)
 [![Codecov](https://img.shields.io/codecov/c/github/GReX-Telescope/katcp?style=flat-square)](https://app.codecov.io/gh/GReX-Telescope/katcp)
