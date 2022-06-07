@@ -65,7 +65,7 @@ fn generate_named_serde(variant: &Variant, fields: Vec<(Ident, Type)>) -> proc_m
     let arg_parses = fields.iter().enumerate().map(|(index, (ident, typ))| {
         quote! {
             let #ident = <#typ>::from_argument(           // Perform conversion, assuming field impls FromKatcpArgument
-                msg.arguments
+                msg.arguments()
                     .get(#index)                          // Get the index associated with this field
                     .ok_or(KatcpError::MissingArgument)?, // Ensure it exists
             )?;
