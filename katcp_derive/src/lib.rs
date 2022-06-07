@@ -123,7 +123,7 @@ fn generate_unnamed_serde(variant: &Variant, ty: Vec<Type>) -> proc_macro2::Toke
             }
             fn #fn_to_variant(msg: &Message) -> Result<Self, KatcpError> {
                 // This seems bad
-                let mut arg_iter = msg.arguments.clone().into_iter();
+                let mut arg_iter = msg.arguments().into_iter();
                 Ok(Self::#kind(<#ty>::from_arguments(&mut arg_iter)?))
             }
         }
