@@ -1,3 +1,56 @@
+//! The implementation of the protocol itself (no message specific details)
+//!
+//! You usually shouldn't have to interact with things from here and use the message types directly. However, you
+//! can if you want to
+//! ## Examples
+//!
+//! Serialization and deserialization is handled through the core [`Message`] type. Most of the standard rust conversion methods should work
+//! and error appropriately.
+//!
+//! ### Deserialization
+//!
+//! If you have a string that represents a katcp message, you can convert directly into the [`Message`] struct.
+//!
+//! ```
+//! use std::str::FromStr;
+//!
+//! use katcp::protocol::Message;
+//!
+//! let msg_str = "?set-unknown-paramer[123] 6.1 true my-attribute";
+//! // Both of these are equivalent
+//! let msg_a: Message = msg_str.try_into().unwrap();
+//! let msg_b = Message::from_str(msg_str).unwrap();
+//! ```
+//!
+//! If you are working on a stream of messages, you can invoke the parser directly. The parser is written with the [nom](https://github.com/Geal/nom)
+//! parser combinator library, so the top level [`message`] can be used with that directly.
+//!
+//! ```
+//! use katcp::protocol::{message, Message};
+//! use nom::{multi::many1, IResult};
+//!
+//! fn parse_many_messages(input: &str) -> IResult<&str, Vec<Message>> {
+//!     many1(message)(input)
+//! }
+//! ```
+//!
+//! ### Serialization
+//!
+//! If you have a constructed [`Message`], you can call anything that uses `Display` to serialize.
+//! Note: the serialization function does *not* check validity, that is performed with the standard [`Message::new`]
+//! consstructor. The `Display` methods will assume a constructed message is valid. If you want to skip these validation steps
+//! there is the [`Message::new_unchecked`], which is marked `unsafe`.
+//!
+//! ```
+//! use katcp::protocol::{Message, MessageKind};
+//!
+//! let msg = Message::new(MessageKind::Inform, "foo-bar", None, vec![
+//!     "param-1", "param-2",
+//! ])
+//! .unwrap(); // Panic on bad arguments
+//! let msg_str = format!("{}", msg);
+//! ```
+
 use core::{fmt::Display, str::FromStr};
 
 use nom::{
@@ -40,6 +93,7 @@ pub struct Message {
 }
 
 #[derive(Debug, PartialEq)]
+/// The core Error type for this crate
 pub enum KatcpError {
     ParseError(nom::Err<Error<String>>),
     BadArgument,
@@ -152,6 +206,7 @@ fn argument(input: &str) -> IResult<&str, &str> {
     recognize(many1(alt((escape, plain))))(input)
 }
 
+/// The parser combinator for messages. One could write a grammar that utilizes this parser with nom.
 pub fn message(input: &str) -> IResult<&str, Message> {
     let (remaining, (kind, name, id, arguments, _, _)) = tuple((
         kind,

@@ -1,3 +1,5 @@
+//! Messages for implementing multi-client support
+//!
 //! KATCP-compliant devices may either support multiple simultaneous clients or only a single client. The multi-client
 //! option is the preferred option for devices capable of implementing it as it provides a means of monitoring
 //! a device while it is being controlled on a separate connection.
@@ -28,6 +30,7 @@ use katcp_derive::KatcpMessage;
 use crate::prelude::*;
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Messages for getting information about all the connected clients
 pub enum ClientList {
     /// Before sending a reply, the client-list request will send a client-list inform
     /// message containing the address of a client for each client connected to the device,
@@ -40,6 +43,7 @@ pub enum ClientList {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// The inform messsage sent on new connections
 pub enum ClientConnected {
     /// A description of the new client. It should include the address and port the new client connected from
     Inform { message: String },

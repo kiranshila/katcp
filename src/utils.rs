@@ -1,5 +1,5 @@
 /// Unescapes a string revieved from katcp using the eight valid escape characters
-pub fn unescape(input: &str) -> String {
+pub(crate) fn unescape(input: &str) -> String {
     input
         .replace(r"\_", " ")
         .replace(r"\0", "\0")
@@ -12,7 +12,7 @@ pub fn unescape(input: &str) -> String {
 }
 
 /// Escapes a string into a string suitable for katcp using the eight valid escape characters
-pub fn escape(input: &str) -> String {
+pub(crate) fn escape(input: &str) -> String {
     if input.is_empty() {
         r"\@".to_owned()
     } else {

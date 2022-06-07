@@ -1,3 +1,4 @@
+//! Common message types and traits
 use std::{
     fmt::Display,
     net::{IpAddr, SocketAddr},
@@ -48,8 +49,9 @@ where
     fn from_arguments(strings: &mut impl Iterator<Item = String>) -> Result<Self, Self::Err>;
 }
 
-// Marker Traits
+/// Marker trait for implementers of both [`ToKatcpArgument`] and [`FromKatcpArgument`]
 pub trait KatcpArgument: ToKatcpArgument + FromKatcpArgument {}
+/// Marker trait for implementers of both [`ToKatcpArguments`] and [`FromKatcpArguments`]
 pub trait KatcpArguments: ToKatcpArguments + FromKatcpArguments {}
 impl<T> KatcpArgument for T where T: ToKatcpArgument + FromKatcpArgument {}
 impl<T> KatcpArguments for T where T: ToKatcpArguments + FromKatcpArguments {}
@@ -322,7 +324,7 @@ impl ToKatcpArguments for ArgumentVec {
     }
 }
 
-pub fn from_argument_vec(
+pub(crate) fn from_argument_vec(
     ty: &ArgumentType,
     strings: &mut impl Iterator<Item = String>,
 ) -> Result<ArgumentVec, KatcpError> {

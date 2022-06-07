@@ -1,6 +1,4 @@
-//! The requests and informs defined in this section deal with connecting to a device, halting it or restarting it
-//! and querying it for some basic information about itself. KATCP devices are required to implement all of the
-//! messages in this section.
+//! Messages dealing with connecting to a device, halting it or restarting it and querying basic information
 
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 use rustc_version;
@@ -89,6 +87,7 @@ impl FromKatcpArguments for IntReply {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// The core help message type
 pub enum Help {
     /// Although the description is not intended to be machine readable, the preferred convention for describing
     /// the parameters and return values is to use a syntax like that seen on the right-hand side of a BNF produc-
@@ -201,6 +200,7 @@ pub enum ChangeSpecificationAction {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+/// The sum type of the different [`InterfaceChanged`] informs
 pub enum InterfaceChangeInform {
     SensorList,
     RequestList,

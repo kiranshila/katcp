@@ -1,10 +1,50 @@
+//! Messages for dealing with sensor updates and configuration along with a [`Sensor`] type
+//!
+//! ## Example
+//! This module is a little different from the others in that there is a core type, [`Sensor`] that is not
+//! directly related to a message. The trick here is that sensor update messages ([`SensorValue`] and [`SensorStatus`]) have
+//! values whose type depends on which sensor the value refers to. As Rust is statically typed, we can't determine how to deserialize
+//! the `value` field without a priori knowing a mapping from sensor name to type. So, we leave those update messages unparsed, but implement
+//! an update method for the [`Sensor`] type that can consume one of those update results.
+//!
+//! ```rust
+//! use chrono::{TimeZone, Utc};
+//! use katcp::messages::sensors::{Sensor, SensorUpdates, SensorValue, Status};
+//!
+//! // Make a new sensor that is Sensor<f32> (implied from the type of the value)
+//! let mut pressure = Sensor::new("pump.pressure".to_owned(), Status::Unknown, Utc::now(), 0.0);
+//! // Then, we get a new message that contains the sensor update (implied try_into from the if let)
+//! let update = "#sensor-value 1427043968.954988 1 pump.pressure nominal 68.9"
+//!     .try_into()
+//!     .unwrap();
+//! // The `update` variable here could contain multiple updates, but we'll just grab the on
+//! if let SensorValue::Inform(SensorUpdates {
+//!     timestamp,
+//!     readings,
+//! }) = update
+//! {
+//!     // This knows to serialize the reading into an f32 because of the type of the sensor
+//!     pressure
+//!         .update_from_reading(&timestamp, readings.first().unwrap())
+//!         .unwrap();
+//! }
+//! // Sensor is now:
+//! // Sensor {
+//! //      name: "pump.pressure",
+//! //      status: Nominal,
+//! //      timestamp: 2015-03-22T17:06:08.954988002Z,
+//! //      value: 68.9,
+//! //  }
+//! ```
+
 use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
 use super::common::from_argument_vec;
 use crate::prelude::*;
 
-/// The core `sensor` type.
-/// The value of a sensor is generic to anything that is a valid KatcpArgument
+/// The core sensor type
+///
+/// The value of a sensor is generic to anything that impls [`crate::messages::common::KatcpArgument`]
 #[derive(Debug, PartialEq, Eq)]
 pub struct Sensor<T>
 where
@@ -112,13 +152,13 @@ impl Status {
 pub struct SensorListInform {
     /// is the name of the sensor in dotted notation. This notation allows a virtual hierarchy of sensors to
     /// be represented; e.g. a name might be rfe0.temperature.
-    name: String,
+    pub name: String,
     /// is a human-readable description of the information provided by the sensor.
-    description: String,
+    pub description: String,
     /// is a human-readable string containing a short form of the units for the sensor value. May be blank
     /// if there are no suitable units. Examples: "kg", "packet count", "m/s". Should be suitable for display
     /// next to the value in a user interface
-    units: String,
+    pub units: String,
     /// The params themselves. The meaning of the params depend on the types
     ///
     /// # Notes
@@ -147,7 +187,7 @@ pub struct SensorListInform {
     ///
     /// ## Boolean, Timestamp, Address, String
     /// No additional parameters
-    params: ArgumentVec,
+    pub params: ArgumentVec,
 }
 
 impl ToKatcpArguments for SensorListInform {
@@ -185,6 +225,7 @@ impl FromKatcpArguments for SensorListInform {
 
 // Sensor Sampling
 #[derive(KatcpMessage, Debug, PartialEq)]
+/// The messages to query the available sensors
 pub enum SensorList {
     /// Before sending a reply, the sensor-list request will send a number of sensor-list inform messages. If no
     /// name parameter is sent the sensor-list request will return a sensor-list inform message for each sensor
@@ -327,12 +368,12 @@ impl FromKatcpArguments for SamplingStrategy {
 /// The type representing a sensor sampling request
 pub struct SamplingRequest {
     /// is the name of a single sensor. For bulk setting a comma-separated list of many sensor names can be used if the server supports the `B` flag
-    names: String,
+    pub names: String,
     /// pecifies a sampling strategy and is one of the strategies described in [`SamplingStrategy`]
     /// If no strategy is
     /// specified, the current strategy and parameters are left unchanged and just reported in the reply. This
     /// querying of a strategy is only applicable when specifying a single sensor name, not a list of names.
-    strategy: Option<SamplingStrategy>,
+    pub strategy: Option<SamplingStrategy>,
 }
 
 impl ToKatcpArguments for SamplingRequest {
@@ -370,9 +411,10 @@ impl FromKatcpArguments for SamplingRequest {
 }
 
 #[derive(Debug, PartialEq)]
+/// The Reply type for [`SensorSampling`]
 pub struct SamplingReply {
-    names: String,
-    strategy: SamplingStrategy,
+    pub names: String,
+    pub strategy: SamplingStrategy,
 }
 
 impl ToKatcpArguments for SamplingReply {
@@ -393,18 +435,20 @@ impl FromKatcpArguments for SamplingReply {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq)]
+/// The messages that control how sensors are sampled
 pub enum SensorSampling {
     Request(SamplingRequest),
     Reply(SamplingReply),
 }
 
 #[derive(Debug, PartialEq, Eq)]
+/// A complete sensor reading, returned by [`SensorValue`] and [`SensorStatus`]
 pub struct SensorReading {
-    name: String,
-    status: Status,
+    pub name: String,
+    pub status: Status,
     /// A bare sensor reading will be kept as a string as it's type
     /// is dependent on the value of `name`
-    value: String,
+    pub value: String,
 }
 
 impl FromKatcpArguments for SensorReading {
@@ -433,9 +477,10 @@ impl ToKatcpArguments for SensorReading {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+/// A timestamped collection of [`SensorReading`]s
 pub struct SensorUpdates {
-    timestamp: KatcpTimestamp,
-    readings: Vec<SensorReading>,
+    pub timestamp: KatcpTimestamp,
+    pub readings: Vec<SensorReading>,
 }
 
 impl FromKatcpArguments for SensorUpdates {
@@ -474,6 +519,7 @@ impl ToKatcpArguments for SensorUpdates {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// The messages involving directly querying a sensor's value
 pub enum SensorValue {
     /// Before sending a reply, the sensor-value request will send a number of sensor-value inform messages. If
     /// no name parameter is sent the sensor-value request will return a sensor value for each sensor available on
@@ -491,12 +537,13 @@ pub enum SensorValue {
     Inform(SensorUpdates),
 }
 
-/// A sensor-status inform should be sent whenever the sensor sampling set up by the client dictates. The
-/// sensor-status inform message has the same structure as the [`SensorValue`] inform except for the message
-/// name. The message name is used to determine whether the sensor value is being reported in response to
-/// a sensor-value request or as a result of sensor sampling
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// The async sensor status update message
 pub enum SensorStatus {
+    /// A sensor-status inform should be sent whenever the sensor sampling set up by the client dictates. The
+    /// sensor-status inform message has the same structure as the [`SensorValue`] inform except for the message
+    /// name. The message name is used to determine whether the sensor value is being reported in response to
+    /// a sensor-value request or as a result of sensor sampling
     Inform(SensorUpdates),
 }
 

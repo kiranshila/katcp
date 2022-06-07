@@ -1,4 +1,4 @@
-//! This module provides the core katcp message type [`Log`]
+//! The core katcp message type [`Log`]
 //!
 //! # Examples
 //! ```rust
@@ -70,6 +70,7 @@ pub enum LogLevel {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq)]
+/// Log messages
 pub enum Log {
     Inform {
         level: LogLevel,
