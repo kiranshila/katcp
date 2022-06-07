@@ -178,10 +178,10 @@ fn generate_try_from(
         impl TryFrom<Message> for #message_name {
             type Error = KatcpError;
             fn try_from(message: Message) -> Result<Self,Self::Error> {
-                if message.name != #message_str {
+                if message.name() != #message_str {
                     return Err(KatcpError::IncorrectType);
                 }
-                match message.kind {
+                match message.kind() {
                     MessageKind::Request => #request_fn,
                     MessageKind::Reply => #reply_fn,
                     MessageKind::Inform => #inform_fn,

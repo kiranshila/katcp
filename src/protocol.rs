@@ -145,6 +145,26 @@ impl Message {
         // and arguments, so we're good to go here
         unsafe { Ok(Self::new_unchecked(kind, name, id, arguments)) }
     }
+
+    /// Kind getter
+    pub fn kind(&self) -> MessageKind {
+        self.kind
+    }
+
+    /// Name getter
+    pub fn name(&self) -> String {
+        self.name.clone()
+    }
+
+    /// Id getter
+    pub fn id(&self) -> Option<u32> {
+        self.id
+    }
+
+    /// Arguments getter
+    pub fn arguments(&self) -> Vec<String> {
+        self.arguments.clone()
+    }
 }
 
 fn own_nom_err(e: nom::Err<Error<&str>>) -> nom::Err<Error<String>> {
