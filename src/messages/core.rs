@@ -88,7 +88,7 @@ impl FromKatcpArguments for IntReply {
     }
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// The core help message type
 pub enum Help {
     /// Although the description is not intended to be machine readable, the preferred convention for describing
@@ -112,7 +112,7 @@ pub enum Help {
     Reply(IntReply),
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Requesting a restart should trigger a software reset. It is expected to close the connection, reload the
 /// software and begin execution again, preferably without changing the hardware configuration (if possible).
 /// It would end with the device being ready to accept new connections again. The reply should be sent before
@@ -122,7 +122,7 @@ pub enum Restart {
     Reply(GenericReply),
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Requesting a watchdog may be sent by the client occasionally to check that the connection to the
 /// device is still active. The device should respond with a success reply if it receives the watchdog request
 pub enum Watchdog {
@@ -130,7 +130,7 @@ pub enum Watchdog {
     Reply(GenericReply),
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Before sending a reply the ?version-list command will send a
 /// series of #version-list informs. The list of informs should include all of the roles and components
 /// returned via #version-connect but may contain additional roles or components.
@@ -152,7 +152,7 @@ pub enum VersionList {
 
 // Async informs, these only have `Inform` fields
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Sent to the client by the device shortly before the client is disconnected. In the case where a client is being
 /// disconnected because a new client has connected, the message should include
 /// the IP number and port of the new client for tracking purposes.
@@ -160,7 +160,7 @@ pub enum Disconnect {
     Inform { message: String },
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash, Clone)]
 /// Flags from [VersionConnect] that indicate the device's features
 pub enum ProtocolFlags {
     /// the server supports multiple clients. Absence of this flag indicates that only a single client is supported
@@ -198,7 +198,7 @@ impl TryFrom<String> for ProtocolFlags {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// The three different types of [`VersionConnect`] inform messages
 pub enum VersionConnectInform {
     /// The version of katcp and the options it supports
@@ -335,7 +335,7 @@ impl FromKatcpArguments for VersionConnectInform {
     }
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Sent to the client when it connects. These inform messages use the same argument format as [`VersionList`]
 /// and all roles and components declared via [`VersionConnect`] should be included in the informs sent in
 /// response to [`VersionList`].
@@ -355,7 +355,7 @@ impl VersionConnect {
     }
 }
 
-#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq, Clone)]
 /// On specific [`InterfaceChanged`] informs, these specify how precisely the interface was changed
 pub enum ChangeSpecificationAction {
     Added,
@@ -363,7 +363,7 @@ pub enum ChangeSpecificationAction {
     Modified,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// The sum type of the different [`InterfaceChanged`] informs
 pub enum InterfaceChangeInform {
     SensorList,
@@ -421,7 +421,7 @@ impl FromKatcpArguments for InterfaceChangeInform {
     }
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Only required for dynamic devices, i.e. devices that may change their katcp interface during a connection.
 /// Sent to the client by the device to indicate that the katcp interface has changed. Passing no arguments
 /// with the inform implies that the whole katcp interface may have changed. The optional parameters allow

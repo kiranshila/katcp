@@ -204,7 +204,7 @@ impl FromKatcpArgument for f32 {
 
 /// Katcp addresses optionally have a port, so we need a sum type for the two native rust
 /// types [`IpAddr`] and [`SocketAddr`], depending on whether we have a port
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum KatcpAddress {
     Ip(IpAddr),
     Socket(SocketAddr),
@@ -263,7 +263,7 @@ where
     assert_eq!(message, message_test)
 }
 
-#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq, Copy, Clone)]
 /// The datatypes that KATCP supports
 pub enum ArgumentType {
     /// Represented by i32
@@ -281,7 +281,7 @@ pub enum ArgumentType {
     String,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The sum type of a vector of one of the primitive [`ArgumentType`]s
 pub enum ArgumentVec {
     Integer(Vec<i32>),

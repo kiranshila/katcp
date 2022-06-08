@@ -29,7 +29,7 @@ use katcp_derive::KatcpMessage;
 
 use crate::prelude::*;
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Messages for getting information about all the connected clients
 pub enum ClientList {
     /// Before sending a reply, the client-list request will send a client-list inform
@@ -42,7 +42,7 @@ pub enum ClientList {
     Reply(IntReply),
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// The inform messsage sent on new connections
 pub enum ClientConnected {
     /// A description of the new client. It should include the address and port the new client connected from

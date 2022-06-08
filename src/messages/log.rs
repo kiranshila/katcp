@@ -11,7 +11,7 @@ use katcp_derive::{KatcpDiscrete, KatcpMessage};
 
 use crate::prelude::*;
 
-#[derive(KatcpDiscrete, Debug, PartialEq, Eq)]
+#[derive(KatcpDiscrete, Debug, PartialEq, Eq, Copy, Clone)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
 pub enum LogLevel {
     /// # Definition
@@ -69,7 +69,7 @@ pub enum LogLevel {
     All,
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Log messages
 pub enum Log {
     Inform {

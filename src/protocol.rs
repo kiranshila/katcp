@@ -76,7 +76,7 @@ pub enum MessageKind {
     Inform,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// The core raw message type of katcp
 pub struct Message {
     /// The message kind

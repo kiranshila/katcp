@@ -44,7 +44,7 @@ use crate::{messages::common::from_argument_vec, prelude::*};
 /// The core sensor type
 ///
 /// The value of a sensor is generic to anything that impls [`crate::messages::common::KatcpArgument`]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Sensor<T>
 where
     T: KatcpArgument + Clone,
@@ -145,7 +145,7 @@ impl Status {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The data of a [`SensorList`] inform message.
 /// You would use this information to design a [`Sensor`] type
 pub struct SensorListInform {
@@ -223,7 +223,7 @@ impl FromKatcpArguments for SensorListInform {
 }
 
 // Sensor Sampling
-#[derive(KatcpMessage, Debug, PartialEq)]
+#[derive(KatcpMessage, Debug, PartialEq, Clone)]
 /// The messages to query the available sensors
 pub enum SensorList {
     /// Before sending a reply, the sensor-list request will send a number of sensor-list inform messages. If no
@@ -239,7 +239,7 @@ pub enum SensorList {
     Reply(IntReply),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The sampling strategy (and associated params) for [`SensorSampling`]
 pub enum SamplingStrategy {
     /// Report the sensor value when convenient for
@@ -363,7 +363,7 @@ impl FromKatcpArguments for SamplingStrategy {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The type representing a sensor sampling request
 pub struct SamplingRequest {
     /// is the name of a single sensor. For bulk setting a comma-separated list of many sensor names can be used if the server supports the `B` flag
@@ -409,7 +409,7 @@ impl FromKatcpArguments for SamplingRequest {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 /// The Reply type for [`SensorSampling`]
 pub struct SamplingReply {
     pub names: String,
@@ -433,14 +433,14 @@ impl FromKatcpArguments for SamplingReply {
     }
 }
 
-#[derive(KatcpMessage, Debug, PartialEq)]
+#[derive(KatcpMessage, Debug, PartialEq, Clone)]
 /// The messages that control how sensors are sampled
 pub enum SensorSampling {
     Request(SamplingRequest),
     Reply(SamplingReply),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// A complete sensor reading, returned by [`SensorValue`] and [`SensorStatus`]
 pub struct SensorReading {
     pub name: String,
@@ -475,7 +475,7 @@ impl ToKatcpArguments for SensorReading {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 /// A timestamped collection of [`SensorReading`]s
 pub struct SensorUpdates {
     pub timestamp: KatcpTimestamp,
@@ -517,7 +517,7 @@ impl ToKatcpArguments for SensorUpdates {
     }
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// The messages involving directly querying a sensor's value
 pub enum SensorValue {
     /// Before sending a reply, the sensor-value request will send a number of sensor-value inform messages. If
@@ -536,7 +536,7 @@ pub enum SensorValue {
     Inform(SensorUpdates),
 }
 
-#[derive(KatcpMessage, Debug, PartialEq, Eq)]
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// The async sensor status update message
 pub enum SensorStatus {
     /// A sensor-status inform should be sent whenever the sensor sampling set up by the client dictates. The
