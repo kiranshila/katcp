@@ -45,10 +45,7 @@ use crate::{messages::common::from_argument_vec, prelude::*};
 ///
 /// The value of a sensor is generic to anything that impls [`crate::messages::common::KatcpArgument`]
 #[derive(Debug, PartialEq, Eq, Clone)]
-pub struct Sensor<T>
-where
-    T: KatcpArgument + Clone,
-{
+pub struct Sensor<T> {
     name: String,
     status: Status,
     timestamp: KatcpTimestamp,
