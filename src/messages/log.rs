@@ -13,7 +13,7 @@ use crate::prelude::*;
 
 #[derive(KatcpDiscrete, Debug, PartialEq, Eq, Copy, Clone)]
 /// Katcp log level, these match the typical log level heiarchy of log4j, syslog, etc
-pub enum LogLevel {
+pub enum Level {
     /// # Definition
     /// OFF is the highest possible logging level and is intended to turn logging off.
     /// # Content
@@ -70,48 +70,21 @@ pub enum LogLevel {
 }
 
 #[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
+/// Messages for setting the device's log level
+pub enum LogLevel {
+    Request { level: Level },
+    Reply { ret_code: RetCode, level: Level },
+}
+
+#[derive(KatcpMessage, Debug, PartialEq, Eq, Clone)]
 /// Log messages
 pub enum Log {
     Inform {
-        level: LogLevel,
+        level: Level,
         timestamp: KatcpTimestamp,
         name: String,
         message: String,
     },
-    Reply {
-        ret_code: RetCode,
-        level: LogLevel,
-    },
-    Request {
-        level: Option<LogLevel>,
-    },
-}
-
-impl Log {
-    /// Constructs a new [`Log`] inform message
-    pub fn inform<T: AsRef<str>, U: AsRef<str>>(
-        level: LogLevel,
-        timestamp: KatcpTimestamp,
-        name: T,
-        message: U,
-    ) -> Self {
-        Self::Inform {
-            level,
-            timestamp,
-            name: name.as_ref().to_owned(),
-            message: message.as_ref().to_owned(),
-        }
-    }
-
-    /// Constructs a new [`Log`] request message
-    pub fn request(level: Option<LogLevel>) -> Self {
-        Self::Request { level }
-    }
-
-    /// Constructs a new [`Log`] reply message
-    pub fn reply(ret_code: RetCode, level: LogLevel) -> Self {
-        Self::Reply { ret_code, level }
-    }
 }
 
 #[cfg(test)]
@@ -124,17 +97,15 @@ mod tests {
     #[test]
     fn test_log() {
         roundtrip_test(Log::Inform {
-            level: LogLevel::Error,
+            level: Level::Error,
             timestamp: Utc.timestamp(420, 3),
             name: "foo.bar.baz".to_owned(),
             message: "This is a test message".to_owned(),
         });
-        roundtrip_test(Log::Reply {
+        roundtrip_test(LogLevel::Reply {
             ret_code: RetCode::Ok,
-            level: LogLevel::Trace,
+            level: Level::Trace,
         });
-        roundtrip_test(Log::Request {
-            level: Some(LogLevel::Info),
-        });
+        roundtrip_test(LogLevel::Request { level: Level::Info });
     }
 }
